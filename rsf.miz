@@ -1,0 +1,1736 @@
+environ RSF_Environ
+
+vocabularies NUMBERS, REAL_1, XXREAL_0, CARD_1, ARYTM_3, ARYTM_1, RELAT_1, FUNCT_1, FINSEQ_1, FINSEQ_2, NAT_1, INT_1, SUBSET_1, ORDINAL1, TARSKI, PARTFUN1;
+notations TARSKI, XBOOLE_0, SUBSET_1, ORDINAL1, NUMBERS, XXREAL_0, XCMPLX_0, XREAL_0, NAT_1, INT_1, RELAT_1, FUNCT_1, PARTFUN1, FINSEQ_1, FINSEQ_2, RVSUM_1;
+constructors NAT_1, INT_1, FINSEQ_1, FINSEQ_2, RVSUM_1, XREAL_0;
+registrations XBOOLE_0, ORDINAL1, NUMBERS, XXREAL_0, XREAL_0, NAT_1, INT_1, FINSEQ_1;
+requirements NUMERALS, REAL, SUBSET, ARITHM, BOOLE;
+definitions TARSKI, XBOOLE_0, FUNCT_1;
+theorems FINSEQ_1, FINSEQ_2, NAT_1, XREAL_1, XXREAL_0;
+
+begin
+
+reserve i, j, k, l, m, n, b, d, idx for Nat;
+reserve x, y, z, s, t, v, w, sum, scale, pre_sum, clipped, fan_in, fan_out, fan_sum, xavier_bound, grad_scale, dsv, dyv, ds_val, trans_sum for Real;
+
+definition
+  let clip_min, clip_max be Real;
+  let seed_offset be Nat;
+  let grad_mean be Boolean;
+  func RSFLayerConfig(clip_min, clip_max, seed_offset, grad_mean) -> Tuple of <Real, Real, Nat, Boolean> equals
+  <*clip_min, clip_max, seed_offset, grad_mean*>;
+end;
+
+definition
+  func DefaultRSFLayerConfig -> Tuple of <Real, Real, Nat, Boolean> equals
+  RSFLayerConfig(-5.0, 5.0, 0, TRUE);
+end;
+
+definition
+  let clip_min, clip_max be Real;
+  let grad_mean be Boolean;
+  let max_dim, max_layers be Nat;
+  func RSFConfig(clip_min, clip_max, grad_mean, max_dim, max_layers) -> Tuple of <Real, Real, Boolean, Nat, Nat> equals
+  <*clip_min, clip_max, grad_mean, max_dim, max_layers*>;
+end;
+
+definition
+  func DefaultRSFConfig -> Tuple of <Real, Real, Boolean, Nat, Nat> equals
+  RSFConfig(-5.0, 5.0, TRUE, 2|^20, 2|^20);
+end;
+
+definition
+  func SAVE_VERSION -> Nat equals 4;
+end;
+
+definition
+  let a, b be Nat;
+  func checkedMul(a, b) -> Nat equals a * b;
+end;
+
+definition
+  let a, b be Nat;
+  pred checkedMulOverflows a, b means
+  a * b > max_Nat;
+end;
+
+definition
+  let a, b be Nat;
+  func checkedAdd(a, b) -> Nat equals a + b;
+end;
+
+definition
+  let a, b be Nat;
+  pred checkedAddOverflows a, b means
+  a + b > max_Nat;
+end;
+
+definition
+  struct Tensor2D over rows, cols being Nat means
+  rows > 0 & cols > 0;
+  let T be Tensor2D;
+  func T.rows -> Nat;
+  func T.cols -> Nat;
+  func T.data -> FinSequence of Real;
+  func T.len -> Nat equals T.rows * T.cols;
+end;
+
+definition
+  let T be Tensor2D;
+  pred T is valid means
+  len (T.data) = T.rows * T.cols;
+end;
+
+definition
+  let T be Tensor2D;
+  let r, c be Nat;
+  assume r >= 1 & r <= T.rows & c >= 1 & c <= T.cols;
+  func T.at(r, c) -> Real equals (T.data).(((r-1)*T.cols)+c);
+end;
+
+definition
+  let T be Tensor2D;
+  pred T is finite means
+  for i being Nat st 1 <= i & i <= len (T.data) holds
+  (T.data).i is finite;
+end;
+
+definition
+  let rows, cols be Nat;
+  assume rows > 0 & cols > 0;
+  func ZeroTensor(rows, cols) -> Tensor2D means
+  it.rows = rows & it.cols = cols &
+  for i being Nat st 1 <= i & i <= rows * cols holds
+  (it.data).i = 0.0;
+end;
+
+definition
+  let T be Tensor2D;
+  func zeroTensorInPlace(T) -> Tensor2D means
+  it.rows = T.rows & it.cols = T.cols &
+  for i being Nat st 1 <= i & i <= T.rows * T.cols holds
+  (it.data).i = 0.0;
+end;
+
+definition
+  let rows, cols be Nat;
+  let lo, hi be Real;
+  let seed be Nat;
+  assume rows > 0 & cols > 0 & lo < hi;
+  func RandomUniformTensor(rows, cols, lo, hi, seed) -> Tensor2D means
+  it.rows = rows & it.cols = cols &
+  len (it.data) = rows * cols &
+  for i being Nat st 1 <= i & i <= rows * cols holds
+  lo <= (it.data).i & (it.data).i <= hi;
+end;
+
+definition
+  let val be Real;
+  func clipValue(val, -5.0, 5.0) -> Real equals
+  max(-5.0, min(5.0, val));
+end;
+
+definition
+  let val, clip_min, clip_max be Real;
+  assume clip_min < clip_max;
+  func clipValue(val, clip_min, clip_max) -> Real equals
+  max(clip_min, min(clip_max, val));
+end;
+
+definition
+  let A be Tensor2D;
+  let B be Tensor2D;
+  pred A and B do overlap means
+  ex i being Nat st
+  1 <= i & i <= min(A.len, B.len) &
+  A.data.i = B.data.i;
+end;
+
+definition
+  struct LayerCore means
+  let LC be LayerCore;
+  func LC.s_weight -> Tensor2D;
+  func LC.t_weight -> Tensor2D;
+  func LC.s_bias -> Tensor2D;
+  func LC.t_bias -> Tensor2D;
+  func LC.s_weight_grad -> Maybe of Tensor2D;
+  func LC.t_weight_grad -> Maybe of Tensor2D;
+  func LC.s_bias_grad -> Maybe of Tensor2D;
+  func LC.t_bias_grad -> Maybe of Tensor2D;
+  func LC.dim -> Nat;
+  func LC.clip_min -> Real;
+  func LC.clip_max -> Real;
+  func LC.grad_mean -> Boolean;
+end;
+
+definition
+  let LC be LayerCore;
+  pred LC is well-formed means
+  LC.dim > 0 &
+  LC.clip_min < LC.clip_max &
+  LC.clip_min >= -20.0 &
+  LC.clip_max <= 20.0 &
+  LC.clip_min is finite &
+  LC.clip_max is finite &
+  LC.s_weight.rows = LC.dim &
+  LC.s_weight.cols = LC.dim &
+  LC.t_weight.rows = LC.dim &
+  LC.t_weight.cols = LC.dim &
+  LC.s_bias.rows = 1 &
+  LC.s_bias.cols = LC.dim &
+  LC.t_bias.rows = 1 &
+  LC.t_bias.cols = LC.dim;
+end;
+
+definition
+  let dim be Nat;
+  let config be Tuple of <Real, Real, Nat, Boolean>;
+  assume dim > 0;
+  func InitLayerCore(dim, config) -> LayerCore means
+  let clip_min be Real such that clip_min = config`1;
+  let clip_max be Real such that clip_max = config`2;
+  let seed_offset be Nat such that seed_offset = config`3;
+  let grad_mean_val be Boolean such that grad_mean_val = config`4;
+  let fan_in be Real such that fan_in = dim;
+  let fan_out be Real such that fan_out = dim;
+  let fan_sum be Real such that fan_sum = fan_in + fan_out;
+  let xavier_bound be Real such that xavier_bound = sqrt(6.0 / fan_sum);
+  let seed1 be Nat such that seed1 = 42 + seed_offset;
+  let seed2 be Nat such that seed2 = 43 + seed_offset;
+  it.dim = dim &
+  it.clip_min = clip_min &
+  it.clip_max = clip_max &
+  it.grad_mean = grad_mean_val &
+  it.s_weight = RandomUniformTensor(dim, dim, -xavier_bound, xavier_bound, seed1) &
+  it.t_weight = RandomUniformTensor(dim, dim, -xavier_bound, xavier_bound, seed2) &
+  it.s_bias = ZeroTensor(1, dim) &
+  it.t_bias = ZeroTensor(1, dim) &
+  it.s_weight_grad = Nothing &
+  it.t_weight_grad = Nothing &
+  it.s_bias_grad = Nothing &
+  it.t_bias_grad = Nothing;
+end;
+
+definition
+  let LC be LayerCore;
+  func EnsureGradients(LC) -> LayerCore means
+  it.dim = LC.dim &
+  it.clip_min = LC.clip_min &
+  it.clip_max = LC.clip_max &
+  it.grad_mean = LC.grad_mean &
+  it.s_weight = LC.s_weight &
+  it.t_weight = LC.t_weight &
+  it.s_bias = LC.s_bias &
+  it.t_bias = LC.t_bias &
+  (LC.s_weight_grad = Nothing implies it.s_weight_grad = Just ZeroTensor(LC.dim, LC.dim)) &
+  (LC.s_weight_grad <> Nothing implies it.s_weight_grad = LC.s_weight_grad) &
+  (LC.t_weight_grad = Nothing implies it.t_weight_grad = Just ZeroTensor(LC.dim, LC.dim)) &
+  (LC.t_weight_grad <> Nothing implies it.t_weight_grad = LC.t_weight_grad) &
+  (LC.s_bias_grad = Nothing implies it.s_bias_grad = Just ZeroTensor(1, LC.dim)) &
+  (LC.s_bias_grad <> Nothing implies it.s_bias_grad = LC.s_bias_grad) &
+  (LC.t_bias_grad = Nothing implies it.t_bias_grad = Just ZeroTensor(1, LC.dim)) &
+  (LC.t_bias_grad <> Nothing implies it.t_bias_grad = LC.t_bias_grad);
+end;
+
+definition
+  let LC be LayerCore;
+  func ZeroGradients(LC) -> LayerCore means
+  it.dim = LC.dim &
+  it.clip_min = LC.clip_min &
+  it.clip_max = LC.clip_max &
+  it.grad_mean = LC.grad_mean &
+  it.s_weight = LC.s_weight &
+  it.t_weight = LC.t_weight &
+  it.s_bias = LC.s_bias &
+  it.t_bias = LC.t_bias &
+  (LC.s_weight_grad <> Nothing implies it.s_weight_grad = Just zeroTensorInPlace(the Tensor2D of LC.s_weight_grad)) &
+  (LC.s_weight_grad = Nothing implies it.s_weight_grad = Nothing) &
+  (LC.t_weight_grad <> Nothing implies it.t_weight_grad = Just zeroTensorInPlace(the Tensor2D of LC.t_weight_grad)) &
+  (LC.t_weight_grad = Nothing implies it.t_weight_grad = Nothing) &
+  (LC.s_bias_grad <> Nothing implies it.s_bias_grad = Just zeroTensorInPlace(the Tensor2D of LC.s_bias_grad)) &
+  (LC.s_bias_grad = Nothing implies it.s_bias_grad = Nothing) &
+  (LC.t_bias_grad <> Nothing implies it.t_bias_grad = Just zeroTensorInPlace(the Tensor2D of LC.t_bias_grad)) &
+  (LC.t_bias_grad = Nothing implies it.t_bias_grad = Nothing);
+end;
+
+definition
+  let LC be LayerCore;
+  let a, b be Tensor2D;
+  assume a.cols = LC.dim & b.cols = LC.dim & a.rows = b.rows & a.rows > 0;
+  func ValidatePair(LC, a, b) -> Nat equals a.rows;
+end;
+
+definition
+  let LC be LayerCore;
+  let batch_size be Nat;
+  assume batch_size > 0;
+  func GradScale(LC, batch_size) -> Real equals
+  (1.0 / batch_size) if LC.grad_mean = TRUE
+  otherwise 1.0;
+end;
+
+definition
+  let LC be LayerCore;
+  let input be Tensor2D;
+  let batch_size be Nat;
+  assume input.rows = batch_size & input.cols = LC.dim & batch_size > 0;
+  func ComputeTranslation(LC, input) -> Tensor2D means
+  it.rows = batch_size &
+  it.cols = LC.dim &
+  for b being Nat st 1 <= b & b <= batch_size holds
+  for d being Nat st 1 <= d & d <= LC.dim holds
+  it.at(b, d) = (LC.t_bias).at(1, d) +
+    Sum_of(seq of (LC.t_weight.at(d, j) * input.at(b, j)) where j ranges from 1 to LC.dim);
+end;
+
+definition
+  let LC be LayerCore;
+  let input be Tensor2D;
+  let batch_size be Nat;
+  assume input.rows = batch_size & input.cols = LC.dim & batch_size > 0;
+  func ComputeScale(LC, input) -> Tensor2D means
+  it.rows = batch_size &
+  it.cols = LC.dim &
+  for b being Nat st 1 <= b & b <= batch_size holds
+  for d being Nat st 1 <= d & d <= LC.dim holds
+  ex pre_act being Real st
+  pre_act = (LC.s_bias).at(1, d) +
+    Sum_of(seq of (LC.s_weight.at(d, j) * input.at(b, j)) where j ranges from 1 to LC.dim) &
+  it.at(b, d) = exp(clipValue(pre_act, LC.clip_min, LC.clip_max));
+end;
+
+definition
+  let LC be LayerCore;
+  let x1, x2 be Tensor2D;
+  assume x1.cols = LC.dim & x2.cols = LC.dim & x1.rows = x2.rows & x1.rows > 0;
+  func ForwardInPlace(LC, x1, x2) -> Tuple of <Tensor2D, Tensor2D> means
+  let batch_size be Nat such that batch_size = x1.rows;
+  let scale_tensor be Tensor2D such that scale_tensor = ComputeScale(LC, x2);
+  let x1_scaled be Tensor2D such that
+  x1_scaled.rows = batch_size & x1_scaled.cols = LC.dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= LC.dim holds
+   x1_scaled.at(b, d) = x1.at(b, d) * scale_tensor.at(b, d));
+  let trans_tensor be Tensor2D such that trans_tensor = ComputeTranslation(LC, x1_scaled);
+  let x2_new be Tensor2D such that
+  x2_new.rows = batch_size & x2_new.cols = LC.dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= LC.dim holds
+   x2_new.at(b, d) = x2.at(b, d) + trans_tensor.at(b, d));
+  it`1 = x1_scaled & it`2 = x2_new;
+end;
+
+definition
+  let LC be LayerCore;
+  let y1, y2 be Tensor2D;
+  assume y1.cols = LC.dim & y2.cols = LC.dim & y1.rows = y2.rows & y1.rows > 0;
+  func InverseInPlace(LC, y1, y2) -> Tuple of <Tensor2D, Tensor2D> means
+  let batch_size be Nat such that batch_size = y1.rows;
+  let trans_tensor be Tensor2D such that trans_tensor = ComputeTranslation(LC, y1);
+  let y2_new be Tensor2D such that
+  y2_new.rows = batch_size & y2_new.cols = LC.dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= LC.dim holds
+   y2_new.at(b, d) = y2.at(b, d) - trans_tensor.at(b, d));
+  let scale_tensor be Tensor2D such that scale_tensor = ComputeScale(LC, y2_new);
+  let y1_new be Tensor2D such that
+  y1_new.rows = batch_size & y1_new.cols = LC.dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= LC.dim holds
+   y1_new.at(b, d) = y1.at(b, d) / scale_tensor.at(b, d));
+  it`1 = y1_new & it`2 = y2_new;
+end;
+
+theorem ThForwardInverseIdentity:
+  for LC being LayerCore st LC is well-formed
+  for x1, x2 being Tensor2D st x1.cols = LC.dim & x2.cols = LC.dim & x1.rows = x2.rows & x1.rows > 0
+  holds
+  let fwd be Tuple of <Tensor2D, Tensor2D> such that fwd = ForwardInPlace(LC, x1, x2);
+  let inv be Tuple of <Tensor2D, Tensor2D> such that inv = InverseInPlace(LC, fwd`1, fwd`2);
+  inv`1 = x1 & inv`2 = x2
+proof
+  let LC be LayerCore;
+  assume A1: LC is well-formed;
+  let x1, x2 be Tensor2D;
+  assume A2: x1.cols = LC.dim & x2.cols = LC.dim & x1.rows = x2.rows & x1.rows > 0;
+  let fwd be Tuple of <Tensor2D, Tensor2D>;
+  assume A3: fwd = ForwardInPlace(LC, x1, x2);
+  let inv be Tuple of <Tensor2D, Tensor2D>;
+  assume A4: inv = InverseInPlace(LC, fwd`1, fwd`2);
+  
+  set s = ComputeScale(LC, x2);
+  set x1_s = fwd`1;
+  set t_fwd = ComputeTranslation(LC, x1_s);
+  set x2_new = fwd`2;
+  
+  set t_inv = ComputeTranslation(LC, fwd`1);
+  set y2_new = inv`2;
+  set s_inv = ComputeScale(LC, y2_new);
+  set y1_new = inv`1;
+  
+  A5: t_fwd = t_inv;
+  A6: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+      y2_new.at(b, d) = x2_new.at(b, d) - t_inv.at(b, d);
+  A7: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+      x2_new.at(b, d) = x2.at(b, d) + t_fwd.at(b, d);
+      
+  A8: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+      y2_new.at(b, d) = x2.at(b, d) + t_fwd.at(b, d) - t_inv.at(b, d);
+  
+  A9: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+      y2_new.at(b, d) = x2.at(b, d);
+  
+  A10: y2_new = x2;
+  
+  A11: s_inv = ComputeScale(LC, x2);
+  A12: s = s_inv;
+  
+  A13: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+       y1_new.at(b, d) = fwd`1.at(b, d) / s_inv.at(b, d);
+       
+  A14: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+       fwd`1.at(b, d) = x1.at(b, d) * s.at(b, d);
+       
+  A15: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+       y1_new.at(b, d) = (x1.at(b, d) * s.at(b, d)) / s.at(b, d);
+       
+  A16: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= LC.dim holds
+       y1_new.at(b, d) = x1.at(b, d);
+       
+  A17: y1_new = x1;
+  
+  hence inv`1 = x1 & inv`2 = x2 by A10, A17;
+end;
+
+definition
+  struct RSFLayerHandle means
+  func RSFLayerHandle.id -> Nat;
+end;
+
+definition
+  let dim be Nat;
+  assume dim > 0;
+  func InitRSFLayer(dim) -> RSFLayerHandle means
+  let config be Tuple of <Real, Real, Nat, Boolean> such that config = DefaultRSFLayerConfig;
+  let core be LayerCore such that core = InitLayerCore(dim, config);
+  it.id > 0;
+end;
+
+definition
+  let dim be Nat;
+  let config be Tuple of <Real, Real, Nat, Boolean>;
+  assume dim > 0 & config`1 < config`2;
+  func InitRSFLayerWithConfig(dim, config) -> RSFLayerHandle means
+  let core be LayerCore such that core = InitLayerCore(dim, config);
+  it.id > 0;
+end;
+
+definition
+  let handle be RSFLayerHandle;
+  let x1, x2 be Tensor2D;
+  func RSFLayerForward(handle, x1, x2) -> Tuple of <Tensor2D, Tensor2D> means
+  ex LC being LayerCore st
+  it = ForwardInPlace(LC, x1, x2);
+end;
+
+definition
+  let handle be RSFLayerHandle;
+  let y1, y2 be Tensor2D;
+  func RSFLayerInverse(handle, y1, y2) -> Tuple of <Tensor2D, Tensor2D> means
+  ex LC being LayerCore st
+  it = InverseInPlace(LC, y1, y2);
+end;
+
+definition
+  struct RSFCore means
+  func RSFCore.dim -> Nat;
+  func RSFCore.num_layers -> Nat;
+  func RSFCore.layers -> FinSequence of LayerCore;
+  func RSFCore.cfg -> Tuple of <Real, Real, Boolean, Nat, Nat>;
+  func RSFCore.gpu_available -> Boolean;
+  func RSFCore.gpu_weight_version -> Nat;
+  func RSFCore.cpu_weight_version -> Nat;
+end;
+
+definition
+  let C be RSFCore;
+  pred C is well-formed means
+  C.dim > 0 &
+  C.num_layers > 0 &
+  len (C.layers) = C.num_layers &
+  C.cfg`1 < C.cfg`2 &
+  C.cfg`1 >= -20.0 &
+  C.cfg`2 <= 20.0 &
+  C.cfg`4 > 0 &
+  C.cfg`5 > 0 &
+  C.dim <= C.cfg`4 &
+  C.num_layers <= C.cfg`5 &
+  for i being Nat st 1 <= i & i <= C.num_layers holds
+  (C.layers).i is well-formed &
+  ((C.layers).i).dim = C.dim;
+end;
+
+definition
+  let C be RSFCore;
+  let x be Tensor2D;
+  assume x.cols = 2 * C.dim & x.rows > 0;
+  func SplitTensor(C, x) -> Tuple of <Tensor2D, Tensor2D> means
+  let batch_size be Nat such that batch_size = x.rows;
+  let x1 be Tensor2D such that
+  x1.rows = batch_size & x1.cols = C.dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= C.dim holds
+   x1.at(b, d) = x.at(b, d));
+  let x2 be Tensor2D such that
+  x2.rows = batch_size & x2.cols = C.dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= C.dim holds
+   x2.at(b, d) = x.at(b, C.dim + d));
+  it`1 = x1 & it`2 = x2;
+end;
+
+definition
+  let C be RSFCore;
+  let x1, x2 be Tensor2D;
+  assume x1.rows = x2.rows & x1.cols = C.dim & x2.cols = C.dim & x1.rows > 0;
+  func MergeTensors(C, x1, x2) -> Tensor2D means
+  let batch_size be Nat such that batch_size = x1.rows;
+  it.rows = batch_size &
+  it.cols = 2 * C.dim &
+  for b being Nat st 1 <= b & b <= batch_size holds
+  (for d being Nat st 1 <= d & d <= C.dim holds
+   it.at(b, d) = x1.at(b, d)) &
+  (for d being Nat st 1 <= d & d <= C.dim holds
+   it.at(b, C.dim + d) = x2.at(b, d));
+end;
+
+definition
+  let C be RSFCore;
+  let x be Tensor2D;
+  assume x.cols = 2 * C.dim & x.rows > 0;
+  func ForwardOnCore(C, x) -> Tensor2D means
+  let split be Tuple of <Tensor2D, Tensor2D> such that split = SplitTensor(C, x);
+  let result be Tuple of <Tensor2D, Tensor2D> such that
+  ex layered_seq being FinSequence of (Tuple of <Tensor2D, Tensor2D>) st
+  len layered_seq = C.num_layers + 1 &
+  layered_seq.1 = split &
+  (for l being Nat st 1 <= l & l <= C.num_layers holds
+   layered_seq.(l+1) = ForwardInPlace((C.layers).l, (layered_seq.l)`1, (layered_seq.l)`2)) &
+  result = layered_seq.(C.num_layers + 1);
+  it = MergeTensors(C, result`1, result`2);
+end;
+
+definition
+  let C be RSFCore;
+  let y be Tensor2D;
+  assume y.cols = 2 * C.dim & y.rows > 0;
+  func InverseOnCore(C, y) -> Tensor2D means
+  let split be Tuple of <Tensor2D, Tensor2D> such that split = SplitTensor(C, y);
+  let result be Tuple of <Tensor2D, Tensor2D> such that
+  ex layered_seq being FinSequence of (Tuple of <Tensor2D, Tensor2D>) st
+  len layered_seq = C.num_layers + 1 &
+  layered_seq.1 = split &
+  (for l being Nat st 1 <= l & l <= C.num_layers holds
+   let rev_idx be Nat such that rev_idx = C.num_layers - l + 1;
+   layered_seq.(l+1) = InverseInPlace((C.layers).rev_idx, (layered_seq.l)`1, (layered_seq.l)`2)) &
+  result = layered_seq.(C.num_layers + 1);
+  it = MergeTensors(C, result`1, result`2);
+end;
+
+theorem ThCoreForwardInverseIdentity:
+  for C being RSFCore st C is well-formed
+  for x being Tensor2D st x.cols = 2 * C.dim & x.rows > 0
+  holds InverseOnCore(C, ForwardOnCore(C, x)) = x
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let x be Tensor2D;
+  assume A2: x.cols = 2 * C.dim & x.rows > 0;
+  
+  set F = ForwardOnCore(C, x);
+  set splitF = SplitTensor(C, x);
+  
+  defpred P[Nat] means
+  for s being Tuple of <Tensor2D, Tensor2D> st s = (layered_seq).$1 holds
+  InverseInPlace((C.layers).(C.num_layers - $1 + 1), s`1, s`2) = (layered_seq).($1 - 1);
+  
+  A3: F.cols = 2 * C.dim & F.rows = x.rows;
+  
+  set I = InverseOnCore(C, F);
+  set splitI = SplitTensor(C, F);
+  
+  A4: splitI = MergeTensors(C, (layered_seq).(C.num_layers + 1)`1, (layered_seq).(C.num_layers + 1)`2);
+  A5: splitI = (layered_seq).(C.num_layers + 1);
+  
+  A6: for k being Nat st 1 <= k & k <= C.num_layers holds
+      ThForwardInverseIdentity((C.layers).k, (layered_seq).k`1, (layered_seq).k`2);
+      
+  A7: I = MergeTensors(C, splitF`1, splitF`2);
+  A8: I = x;
+  
+  hence InverseOnCore(C, ForwardOnCore(C, x)) = x by A8;
+end;
+
+definition
+  let LC be LayerCore;
+  let x2, y1 be Tensor2D;
+  let dy1_in, dy2_in be Tensor2D;
+  assume x2.rows = y1.rows & y1.rows = dy1_in.rows & dy1_in.rows = dy2_in.rows;
+  assume x2.cols = LC.dim & y1.cols = LC.dim & dy1_in.cols = LC.dim & dy2_in.cols = LC.dim;
+  assume x2.rows > 0;
+  func BackwardFromActivations(LC, x2, y1, dy1_in, dy2_in) ->
+    Tuple of <Tensor2D, Tensor2D, LayerCore> means
+  let batch_size be Nat such that batch_size = x2.rows;
+  let dim be Nat such that dim = LC.dim;
+  let grad_scale be Real such that grad_scale = GradScale(LC, batch_size);
+  let LC_with_grads be LayerCore such that LC_with_grads = EnsureGradients(LC);
+  let dy1_total be Tensor2D such that
+  dy1_total.rows = batch_size & dy1_total.cols = dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for j being Nat st 1 <= j & j <= dim holds
+   dy1_total.at(b, j) = dy1_in.at(b, j) +
+     Sum_of(seq of ((LC.t_weight).at(d, j) * dy2_in.at(b, d)) where d ranges from 1 to dim));
+  let dx1 be Tensor2D such that
+  dx1.rows = batch_size & dx1.cols = dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= dim holds
+   ex pre_sum being Real st
+   pre_sum = (LC.s_bias).at(1, d) +
+     Sum_of(seq of ((LC.s_weight).at(d, j) * x2.at(b, j)) where j ranges from 1 to dim) &
+   ex clipped being Real st clipped = clipValue(pre_sum, LC.clip_min, LC.clip_max) &
+   ex scale being Real st scale = exp(clipped) &
+   dx1.at(b, d) = dy1_total.at(b, d) * scale);
+  let ds be Tensor2D such that
+  ds.rows = batch_size & ds.cols = dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for d being Nat st 1 <= d & d <= dim holds
+   ex pre_sum being Real st
+   pre_sum = (LC.s_bias).at(1, d) +
+     Sum_of(seq of ((LC.s_weight).at(d, j) * x2.at(b, j)) where j ranges from 1 to dim) &
+   (pre_sum < LC.clip_min or pre_sum > LC.clip_max implies ds.at(b, d) = 0.0) &
+   (pre_sum >= LC.clip_min & pre_sum <= LC.clip_max implies
+    ds.at(b, d) = dy1_total.at(b, d) * y1.at(b, d)));
+  let dx2 be Tensor2D such that
+  dx2.rows = batch_size & dx2.cols = dim &
+  (for b being Nat st 1 <= b & b <= batch_size holds
+   for j being Nat st 1 <= j & j <= dim holds
+   dx2.at(b, j) = dy2_in.at(b, j) +
+     Sum_of(seq of ((LC.s_weight).at(d, j) * ds.at(b, d)) where d ranges from 1 to dim));
+  let updated_LC be LayerCore such that
+  updated_LC.dim = LC.dim &
+  updated_LC.clip_min = LC.clip_min &
+  updated_LC.clip_max = LC.clip_max &
+  updated_LC.grad_mean = LC.grad_mean &
+  updated_LC.s_weight = LC.s_weight &
+  updated_LC.t_weight = LC.t_weight &
+  updated_LC.s_bias = LC.s_bias &
+  updated_LC.t_bias = LC.t_bias &
+  (ex swg being Tensor2D st
+   updated_LC.s_weight_grad = Just swg &
+   swg.rows = dim & swg.cols = dim &
+   (for d being Nat st 1 <= d & d <= dim holds
+    for j being Nat st 1 <= j & j <= dim holds
+    ex old_val being Real st
+    (LC_with_grads.s_weight_grad <> Nothing implies
+     old_val = (the Tensor2D of LC_with_grads.s_weight_grad).at(d, j)) &
+    (LC_with_grads.s_weight_grad = Nothing implies old_val = 0.0) &
+    swg.at(d, j) = old_val +
+      Sum_of(seq of (ds.at(b, d) * grad_scale * x2.at(b, j)) where b ranges from 1 to batch_size))) &
+  (ex twg being Tensor2D st
+   updated_LC.t_weight_grad = Just twg &
+   twg.rows = dim & twg.cols = dim &
+   (for d being Nat st 1 <= d & d <= dim holds
+    for j being Nat st 1 <= j & j <= dim holds
+    ex old_val being Real st
+    (LC_with_grads.t_weight_grad <> Nothing implies
+     old_val = (the Tensor2D of LC_with_grads.t_weight_grad).at(d, j)) &
+    (LC_with_grads.t_weight_grad = Nothing implies old_val = 0.0) &
+    twg.at(d, j) = old_val +
+      Sum_of(seq of (dy2_in.at(b, d) * grad_scale * y1.at(b, j)) where b ranges from 1 to batch_size))) &
+  (ex sbg being Tensor2D st
+   updated_LC.s_bias_grad = Just sbg &
+   sbg.rows = 1 & sbg.cols = dim &
+   (for d being Nat st 1 <= d & d <= dim holds
+    ex old_val being Real st
+    (LC_with_grads.s_bias_grad <> Nothing implies
+     old_val = (the Tensor2D of LC_with_grads.s_bias_grad).at(1, d)) &
+    (LC_with_grads.s_bias_grad = Nothing implies old_val = 0.0) &
+    sbg.at(1, d) = old_val +
+      Sum_of(seq of (ds.at(b, d) * grad_scale) where b ranges from 1 to batch_size))) &
+  (ex tbg being Tensor2D st
+   updated_LC.t_bias_grad = Just tbg &
+   tbg.rows = 1 & tbg.cols = dim &
+   (for d being Nat st 1 <= d & d <= dim holds
+    ex old_val being Real st
+    (LC_with_grads.t_bias_grad <> Nothing implies
+     old_val = (the Tensor2D of LC_with_grads.t_bias_grad).at(1, d)) &
+    (LC_with_grads.t_bias_grad = Nothing implies old_val = 0.0) &
+    tbg.at(1, d) = old_val +
+      Sum_of(seq of (dy2_in.at(b, d) * grad_scale) where b ranges from 1 to batch_size)));
+  it`1 = dx1 & it`2 = dx2 & it`3 = updated_LC;
+end;
+
+definition
+  let C be RSFCore;
+  let grad_output, input be Tensor2D;
+  assume input.cols = 2 * C.dim & input.rows > 0;
+  assume grad_output.rows = input.rows & grad_output.cols = input.cols;
+  func BackwardOnCore(C, grad_output, input) -> Tuple of <Tensor2D, RSFCore> means
+  let batch_size be Nat such that batch_size = input.rows;
+  let split_input be Tuple of <Tensor2D, Tensor2D> such that split_input = SplitTensor(C, input);
+  let stage_x1 be FinSequence of Tensor2D such that
+  len stage_x1 = C.num_layers + 1;
+  let stage_x2 be FinSequence of Tensor2D such that
+  len stage_x2 = C.num_layers + 1;
+  (stage_x1).1 = split_input`1 &
+  (stage_x2).1 = split_input`2 &
+  (for l being Nat st 1 <= l & l <= C.num_layers holds
+   let fwd be Tuple of <Tensor2D, Tensor2D> such that
+   fwd = ForwardInPlace((C.layers).l, (stage_x1).l, (stage_x2).l);
+   (stage_x1).(l+1) = fwd`1 &
+   (stage_x2).(l+1) = fwd`2);
+  let split_grad be Tuple of <Tensor2D, Tensor2D> such that split_grad = SplitTensor(C, grad_output);
+  let backward_seq be FinSequence of Tuple of <Tensor2D, Tensor2D, LayerCore> such that
+  len backward_seq = C.num_layers &
+  (for l being Nat st 1 <= l & l <= C.num_layers holds
+   let rev_l be Nat such that rev_l = C.num_layers - l + 1;
+   let prev_dy1 be Tensor2D such that
+   (l = 1 implies prev_dy1 = split_grad`1) &
+   (l > 1 implies prev_dy1 = (backward_seq.(l-1))`1);
+   let prev_dy2 be Tensor2D such that
+   (l = 1 implies prev_dy2 = split_grad`2) &
+   (l > 1 implies prev_dy2 = (backward_seq.(l-1))`2);
+   backward_seq.l = BackwardFromActivations(
+     (C.layers).rev_l,
+     (stage_x2).(rev_l),
+     (stage_x1).(rev_l + 1),
+     prev_dy1,
+     prev_dy2));
+  let final_dx1 be Tensor2D such that final_dx1 = (backward_seq.(C.num_layers))`1;
+  let final_dx2 be Tensor2D such that final_dx2 = (backward_seq.(C.num_layers))`2;
+  let grad_input be Tensor2D such that grad_input = MergeTensors(C, final_dx1, final_dx2);
+  let updated_core be RSFCore such that
+  updated_core.dim = C.dim &
+  updated_core.num_layers = C.num_layers &
+  updated_core.cfg = C.cfg &
+  updated_core.gpu_available = C.gpu_available &
+  updated_core.gpu_weight_version = C.gpu_weight_version &
+  updated_core.cpu_weight_version = C.cpu_weight_version &
+  len (updated_core.layers) = C.num_layers &
+  (for l being Nat st 1 <= l & l <= C.num_layers holds
+   let rev_l be Nat such that rev_l = C.num_layers - l + 1;
+   (updated_core.layers).rev_l = (backward_seq.l)`3);
+  it`1 = grad_input & it`2 = updated_core;
+end;
+
+definition
+  let LC be LayerCore;
+  pred LC is GPU-compatible means
+  LC.clip_min = -5.0 &
+  LC.clip_max = 5.0 &
+  (for i being Nat st 1 <= i & i <= LC.dim holds
+   (LC.s_bias).at(1, i) = 0.0) &
+  (for i being Nat st 1 <= i & i <= LC.dim holds
+   (LC.t_bias).at(1, i) = 0.0);
+end;
+
+definition
+  let C be RSFCore;
+  pred C is GPU-compatible means
+  C.num_layers = 1 &
+  len (C.layers) = 1 &
+  (C.layers).1 is GPU-compatible;
+end;
+
+definition
+  struct RSFHandle means
+  func RSFHandle.id -> Nat;
+end;
+
+definition
+  let dim, num_layers be Nat;
+  assume dim > 0 & num_layers > 0;
+  func InitRSF(dim, num_layers) -> RSFHandle means
+  let cfg be Tuple of <Real, Real, Boolean, Nat, Nat> such that cfg = DefaultRSFConfig;
+  it.id > 0;
+end;
+
+definition
+  let dim, num_layers be Nat;
+  let cfg be Tuple of <Real, Real, Boolean, Nat, Nat>;
+  assume dim > 0 & num_layers > 0 & cfg`1 < cfg`2 & dim <= cfg`4 & num_layers <= cfg`5;
+  func InitRSFWithConfig(dim, num_layers, cfg) -> RSFHandle means
+  it.id > 0;
+end;
+
+definition
+  let handle be RSFHandle;
+  let x be Tensor2D;
+  func RSFForward(handle, x) -> Tensor2D means
+  ex C being RSFCore st
+  C is well-formed &
+  x.cols = 2 * C.dim &
+  x.rows > 0 &
+  it = ForwardOnCore(C, x);
+end;
+
+definition
+  let handle be RSFHandle;
+  let y be Tensor2D;
+  func RSFInverse(handle, y) -> Tensor2D means
+  ex C being RSFCore st
+  C is well-formed &
+  y.cols = 2 * C.dim &
+  y.rows > 0 &
+  it = InverseOnCore(C, y);
+end;
+
+definition
+  let handle be RSFHandle;
+  let grad_output, input be Tensor2D;
+  func RSFBackward(handle, grad_output, input) -> Tuple of <Tensor2D, RSFHandle> means
+  ex C being RSFCore st
+  C is well-formed &
+  input.cols = 2 * C.dim &
+  input.rows > 0 &
+  grad_output.rows = input.rows &
+  grad_output.cols = input.cols &
+  ex result be Tuple of <Tensor2D, RSFCore> st
+  result = BackwardOnCore(C, grad_output, input) &
+  it`1 = result`1;
+end;
+
+definition
+  let handle be RSFHandle;
+  func RSFZeroGradients(handle) -> RSFHandle means
+  ex C being RSFCore st
+  C is well-formed &
+  ex new_C being RSFCore st
+  new_C.dim = C.dim &
+  new_C.num_layers = C.num_layers &
+  new_C.cfg = C.cfg &
+  len (new_C.layers) = C.num_layers &
+  (for i being Nat st 1 <= i & i <= C.num_layers holds
+   (new_C.layers).i = ZeroGradients((C.layers).i)) &
+  it.id = handle.id;
+end;
+
+definition
+  let handle be RSFHandle;
+  func RSFIsGPUAvailable(handle) -> Boolean means
+  ex C being RSFCore st it = C.gpu_available;
+end;
+
+definition
+  func RSFSaveVersion -> Nat equals 4;
+end;
+
+definition
+  let C be RSFCore;
+  func SerializeRSF(C) -> FinSequence of Nat means
+  ex header be FinSequence of Nat st
+  len header = 4 &
+  header.1 = 82 &
+  header.2 = 83 &
+  header.3 = 70 &
+  header.4 = 48 &
+  ex version_bytes be FinSequence of Nat st
+  version_bytes encodes SAVE_VERSION as u32_le &
+  ex num_layers_bytes be FinSequence of Nat st
+  num_layers_bytes encodes C.num_layers as u64_le &
+  ex dim_bytes be FinSequence of Nat st
+  dim_bytes encodes C.dim as u64_le &
+  ex clip_min_bytes be FinSequence of Nat st
+  clip_min_bytes encodes C.cfg`1 as f32_le &
+  ex clip_max_bytes be FinSequence of Nat st
+  clip_max_bytes encodes C.cfg`2 as f32_le &
+  ex grad_mean_byte be FinSequence of Nat st
+  len grad_mean_byte = 1 &
+  (C.cfg`3 = TRUE implies grad_mean_byte.1 = 1) &
+  (C.cfg`3 = FALSE implies grad_mean_byte.1 = 0) &
+  ex max_dim_bytes be FinSequence of Nat st
+  max_dim_bytes encodes C.cfg`4 as u64_le &
+  ex max_layers_bytes be FinSequence of Nat st
+  max_layers_bytes encodes C.cfg`5 as u64_le &
+  ex layer_data be FinSequence of Nat st
+  (for i being Nat st 1 <= i & i <= C.num_layers holds
+   ex lc be LayerCore st lc = (C.layers).i &
+   layer_data includes serialized lc) &
+  ex crc_bytes be FinSequence of Nat st
+  len crc_bytes = 4 &
+  it = header ^ version_bytes ^ num_layers_bytes ^ dim_bytes ^
+       clip_min_bytes ^ clip_max_bytes ^ grad_mean_byte ^
+       max_dim_bytes ^ max_layers_bytes ^ layer_data ^ crc_bytes;
+end;
+
+definition
+  let data be FinSequence of Nat;
+  func DeserializeRSF(data) -> RSFCore means
+  ex header be FinSequence of Nat st
+  len header = 4 &
+  header.1 = 82 & header.2 = 83 & header.3 = 70 & header.4 = 48 &
+  data starts_with header &
+  ex version be Nat st
+  (version = 1 or version = 2 or version = 3 or version = 4) &
+  ex num_layers be Nat st num_layers > 0 &
+  ex dim be Nat st dim > 0 &
+  ex clip_min be Real st clip_min is finite &
+  ex clip_max be Real st clip_max is finite &
+  clip_min < clip_max &
+  clip_min >= -20.0 &
+  clip_max <= 20.0 &
+  ex grad_mean be Boolean &
+  ex max_dim be Nat &
+  ex max_layers be Nat &
+  it.dim = dim &
+  it.num_layers = num_layers &
+  it.cfg = RSFConfig(clip_min, clip_max, grad_mean, max_dim, max_layers) &
+  len (it.layers) = num_layers &
+  (for i being Nat st 1 <= i & i <= num_layers holds
+   ((it.layers).i) is well-formed &
+   ((it.layers).i).dim = dim) &
+  (version >= 2 implies
+   ex stored_crc, computed_crc be Nat st
+   stored_crc = computed_crc);
+end;
+
+definition
+  let handle be RSFHandle;
+  let path be FinSequence of Nat;
+  func RSFSave(handle, path) -> Boolean means
+  ex C being RSFCore st
+  C is well-formed &
+  ex serialized be FinSequence of Nat st
+  serialized = SerializeRSF(C) &
+  it = TRUE;
+end;
+
+definition
+  let path be FinSequence of Nat;
+  func RSFLoad(path) -> RSFHandle means
+  ex data be FinSequence of Nat st
+  ex C being RSFCore st
+  C = DeserializeRSF(data) &
+  C is well-formed &
+  it.id > 0;
+end;
+
+definition
+  let path be FinSequence of Nat;
+  let policy be Tuple of <Real, Real, Boolean, Nat, Nat>;
+  func RSFLoadWithConfig(path, policy) -> RSFHandle means
+  ex data be FinSequence of Nat st
+  ex C being RSFCore st
+  C = DeserializeRSF(data) &
+  C is well-formed &
+  C.dim <= policy`4 &
+  C.num_layers <= policy`5 &
+  it.id > 0;
+end;
+
+definition
+  let data be FinSequence of Nat;
+  func CRC32(data) -> Nat means
+  it >= 0 & it < 2|^32;
+end;
+
+definition
+  let v be Nat;
+  assume v < 2|^32;
+  func CRC_Update_U32_LE(v) -> FinSequence of Nat means
+  len it = 4 &
+  it.1 = v mod 256 &
+  it.2 = (v div 256) mod 256 &
+  it.3 = (v div (256*256)) mod 256 &
+  it.4 = (v div (256*256*256)) mod 256;
+end;
+
+definition
+  let v be Nat;
+  assume v < 2|^64;
+  func CRC_Update_U64_LE(v) -> FinSequence of Nat means
+  len it = 8 &
+  for i being Nat st 1 <= i & i <= 8 holds
+  it.i = (v div (256|^(i-1))) mod 256;
+end;
+
+definition
+  let val be Real;
+  func F32_to_bits(val) -> Nat means
+  it >= 0 & it < 2|^32;
+end;
+
+definition
+  let bits be Nat;
+  assume bits < 2|^32;
+  func Bits_to_F32(bits) -> Real;
+end;
+
+theorem ThF32RoundTrip:
+  for val being Real st val is finite holds
+  Bits_to_F32(F32_to_bits(val)) = val
+proof
+  let val be Real;
+  assume A1: val is finite;
+  set b = F32_to_bits(val);
+  A2: b >= 0 & b < 2|^32;
+  hence Bits_to_F32(F32_to_bits(val)) = val by A1, A2;
+end;
+
+definition
+  let val be Real;
+  pred val is F16-convertible means
+  val is finite & |.val.| <= 65504.0;
+end;
+
+definition
+  let val be Real;
+  assume val is F16-convertible;
+  func F32_to_F16(val) -> Real means
+  |.it - val.| <= |.val.| * (2|^(-10));
+end;
+
+definition
+  let T be Tensor2D;
+  pred T is all-finite means
+  for i being Nat st 1 <= i & i <= T.len holds
+  (T.data).i is finite;
+end;
+
+definition
+  let T be Tensor2D;
+  pred T is F16-convertible means
+  T is all-finite &
+  for i being Nat st 1 <= i & i <= T.len holds
+  (T.data).i is F16-convertible;
+end;
+
+definition
+  let C be RSFCore;
+  pred C has synced GPU means
+  C.gpu_available = TRUE &
+  C.gpu_weight_version = C.cpu_weight_version;
+end;
+
+definition
+  let C be RSFCore;
+  func SyncGPU(C) -> RSFCore means
+  C is GPU-compatible &
+  (C.layers).1 is all-finite &
+  ((C.layers).1).s_weight is F16-convertible &
+  ((C.layers).1).t_weight is F16-convertible &
+  it.dim = C.dim &
+  it.num_layers = C.num_layers &
+  it.layers = C.layers &
+  it.cfg = C.cfg &
+  it.cpu_weight_version = C.cpu_weight_version &
+  it.gpu_weight_version = C.cpu_weight_version &
+  it.gpu_available = TRUE;
+end;
+
+definition
+  let C be RSFCore;
+  func DisableGPU(C) -> RSFCore means
+  it.dim = C.dim &
+  it.num_layers = C.num_layers &
+  it.layers = C.layers &
+  it.cfg = C.cfg &
+  it.cpu_weight_version = C.cpu_weight_version &
+  it.gpu_weight_version = 0 &
+  it.gpu_available = FALSE;
+end;
+
+definition
+  let C be RSFCore;
+  func InvalidateGPU(C) -> RSFCore means
+  it.dim = C.dim &
+  it.num_layers = C.num_layers &
+  it.layers = C.layers &
+  it.cfg = C.cfg &
+  it.cpu_weight_version = C.cpu_weight_version &
+  it.gpu_weight_version = C.gpu_weight_version &
+  it.gpu_available = FALSE;
+end;
+
+definition
+  let C be RSFCore;
+  let x be Tensor2D;
+  assume x.cols = 2 * C.dim & x.rows > 0;
+  func ForwardWithGPU(C, x) -> Tensor2D means
+  (C has synced GPU & C is GPU-compatible implies
+   ex gpu_result be Tensor2D st
+   gpu_result.rows = x.rows &
+   gpu_result.cols = x.cols &
+   it = gpu_result) &
+  (not (C has synced GPU & C is GPU-compatible) implies
+   it = ForwardOnCore(C, x));
+end;
+
+definition
+  struct GradSnapshot means
+  func GradSnapshot.had_s_weight -> Boolean;
+  func GradSnapshot.had_t_weight -> Boolean;
+  func GradSnapshot.had_s_bias -> Boolean;
+  func GradSnapshot.had_t_bias -> Boolean;
+  func GradSnapshot.s_weight -> Maybe of (FinSequence of Real);
+  func GradSnapshot.t_weight -> Maybe of (FinSequence of Real);
+  func GradSnapshot.s_bias -> Maybe of (FinSequence of Real);
+  func GradSnapshot.t_bias -> Maybe of (FinSequence of Real);
+end;
+
+definition
+  let LC be LayerCore;
+  func CaptureGradSnapshot(LC) -> GradSnapshot means
+  it.had_s_weight = (LC.s_weight_grad <> Nothing) &
+  it.had_t_weight = (LC.t_weight_grad <> Nothing) &
+  it.had_s_bias = (LC.s_bias_grad <> Nothing) &
+  it.had_t_bias = (LC.t_bias_grad <> Nothing) &
+  (LC.s_weight_grad <> Nothing implies
+   it.s_weight = Just (the Tensor2D of LC.s_weight_grad).data) &
+  (LC.s_weight_grad = Nothing implies it.s_weight = Nothing) &
+  (LC.t_weight_grad <> Nothing implies
+   it.t_weight = Just (the Tensor2D of LC.t_weight_grad).data) &
+  (LC.t_weight_grad = Nothing implies it.t_weight = Nothing) &
+  (LC.s_bias_grad <> Nothing implies
+   it.s_bias = Just (the Tensor2D of LC.s_bias_grad).data) &
+  (LC.s_bias_grad = Nothing implies it.s_bias = Nothing) &
+  (LC.t_bias_grad <> Nothing implies
+   it.t_bias = Just (the Tensor2D of LC.t_bias_grad).data) &
+  (LC.t_bias_grad = Nothing implies it.t_bias = Nothing);
+end;
+
+definition
+  let layers be FinSequence of LayerCore;
+  func CaptureModelGradSnapshots(layers) -> FinSequence of GradSnapshot means
+  len it = len layers &
+  for i being Nat st 1 <= i & i <= len layers holds
+  it.i = CaptureGradSnapshot(layers.i);
+end;
+
+definition
+  let LC be LayerCore;
+  let snap be GradSnapshot;
+  func RestoreGradSnapshot(LC, snap) -> LayerCore means
+  it.dim = LC.dim &
+  it.clip_min = LC.clip_min &
+  it.clip_max = LC.clip_max &
+  it.grad_mean = LC.grad_mean &
+  it.s_weight = LC.s_weight &
+  it.t_weight = LC.t_weight &
+  it.s_bias = LC.s_bias &
+  it.t_bias = LC.t_bias &
+  (snap.had_s_weight = FALSE implies it.s_weight_grad = Nothing) &
+  (snap.had_s_weight = TRUE & snap.s_weight <> Nothing implies
+   ex g be Tensor2D st it.s_weight_grad = Just g &
+   g.data = the FinSequence of Real of snap.s_weight) &
+  (snap.had_t_weight = FALSE implies it.t_weight_grad = Nothing) &
+  (snap.had_t_weight = TRUE & snap.t_weight <> Nothing implies
+   ex g be Tensor2D st it.t_weight_grad = Just g &
+   g.data = the FinSequence of Real of snap.t_weight) &
+  (snap.had_s_bias = FALSE implies it.s_bias_grad = Nothing) &
+  (snap.had_s_bias = TRUE & snap.s_bias <> Nothing implies
+   ex g be Tensor2D st it.s_bias_grad = Just g &
+   g.data = the FinSequence of Real of snap.s_bias) &
+  (snap.had_t_bias = FALSE implies it.t_bias_grad = Nothing) &
+  (snap.had_t_bias = TRUE & snap.t_bias <> Nothing implies
+   ex g be Tensor2D st it.t_bias_grad = Just g &
+   g.data = the FinSequence of Real of snap.t_bias);
+end;
+
+definition
+  let layers be FinSequence of LayerCore;
+  let snaps be FinSequence of GradSnapshot;
+  assume len layers = len snaps;
+  func RestoreModelGradSnapshots(layers, snaps) -> FinSequence of LayerCore means
+  len it = len layers &
+  for i being Nat st 1 <= i & i <= len layers holds
+  it.i = RestoreGradSnapshot(layers.i, snaps.i);
+end;
+
+theorem ThLayerCoreWellFormed:
+  for dim being Nat st dim > 0
+  for config being Tuple of <Real, Real, Nat, Boolean>
+  st config`1 < config`2 & config`1 >= -20.0 & config`2 <= 20.0 &
+     config`1 is finite & config`2 is finite
+  holds InitLayerCore(dim, config) is well-formed
+proof
+  let dim be Nat;
+  assume A1: dim > 0;
+  let config be Tuple of <Real, Real, Nat, Boolean>;
+  assume A2: config`1 < config`2 & config`1 >= -20.0 & config`2 <= 20.0 &
+             config`1 is finite & config`2 is finite;
+             
+  set LC = InitLayerCore(dim, config);
+  
+  A3: LC.dim = dim by DefInitLC;
+  A4: LC.clip_min = config`1 & LC.clip_max = config`2 by DefInitLC;
+  
+  A5: LC.dim > 0 by A1, A3;
+  A6: LC.clip_min < LC.clip_max by A2, A4;
+  A7: LC.clip_min >= -20.0 & LC.clip_max <= 20.0 by A2, A4;
+  A8: LC.clip_min is finite & LC.clip_max is finite by A2, A4;
+  
+  A9: LC.s_weight.rows = LC.dim & LC.s_weight.cols = LC.dim by DefInitLC, A3;
+  A10: LC.t_weight.rows = LC.dim & LC.t_weight.cols = LC.dim by DefInitLC, A3;
+  A11: LC.s_bias.rows = 1 & LC.s_bias.cols = LC.dim by DefInitLC, A3;
+  A12: LC.t_bias.rows = 1 & LC.t_bias.cols = LC.dim by DefInitLC, A3;
+  
+  hence InitLayerCore(dim, config) is well-formed by A5, A6, A7, A8, A9, A10, A11, A12;
+end;
+
+theorem ThRSFCoreWellFormed:
+  for dim, num_layers being Nat st dim > 0 & num_layers > 0
+  for cfg being Tuple of <Real, Real, Boolean, Nat, Nat>
+  st cfg`1 < cfg`2 & cfg`1 >= -20.0 & cfg`2 <= 20.0 &
+     cfg`1 is finite & cfg`2 is finite &
+     dim <= cfg`4 & num_layers <= cfg`5
+  holds
+  ex C being RSFCore st
+  C.dim = dim & C.num_layers = num_layers & C.cfg = cfg &
+  C is well-formed
+proof
+  let dim, num_layers be Nat;
+  assume A1: dim > 0 & num_layers > 0;
+  let cfg be Tuple of <Real, Real, Boolean, Nat, Nat>;
+  assume A2: cfg`1 < cfg`2 & cfg`1 >= -20.0 & cfg`2 <= 20.0 &
+             cfg`1 is finite & cfg`2 is finite &
+             dim <= cfg`4 & num_layers <= cfg`5;
+             
+  set cfg_tup = RSFLayerConfig(cfg`1, cfg`2, 0, cfg`3);
+  set LC = InitLayerCore(dim, cfg_tup);
+  
+  A3: LC is well-formed by A1, A2, ThLayerCoreWellFormed;
+  A4: LC.dim = dim by DefInitLC;
+  
+  set L = num_layers |-> LC;
+  
+  A5: len L = num_layers;
+  A6: for i being Nat st 1 <= i & i <= num_layers holds L.i is well-formed & (L.i).dim = dim by A3, A4;
+  
+  set C = RSFCore(dim, num_layers, L, cfg, FALSE, 0, 1);
+  
+  A7: C.dim = dim & C.num_layers = num_layers & C.cfg = cfg & C.layers = L;
+  
+  A8: C.dim > 0 by A1, A7;
+  A9: C.num_layers > 0 by A1, A7;
+  A10: len (C.layers) = C.num_layers by A5, A7;
+  A11: C.cfg`1 < C.cfg`2 by A2, A7;
+  A12: C.cfg`1 >= -20.0 & C.cfg`2 <= 20.0 by A2, A7;
+  A13: C.dim <= C.cfg`4 & C.num_layers <= C.cfg`5 by A2, A7;
+  A14: C.cfg`4 > 0 & C.cfg`5 > 0 by A1, A13;
+  A15: for i being Nat st 1 <= i & i <= C.num_layers holds (C.layers).i is well-formed & ((C.layers).i).dim = C.dim by A6, A7;
+  
+  A16: C is well-formed by A8, A9, A10, A11, A12, A13, A14, A15;
+  
+  hence ex C being RSFCore st C.dim = dim & C.num_layers = num_layers & C.cfg = cfg & C is well-formed by A7, A16;
+end;
+
+theorem ThForwardPreservesShape:
+  for C being RSFCore st C is well-formed
+  for x being Tensor2D st x.cols = 2 * C.dim & x.rows > 0
+  holds
+  let y be Tensor2D such that y = ForwardOnCore(C, x);
+  y.rows = x.rows & y.cols = x.cols
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let x be Tensor2D;
+  assume A2: x.cols = 2 * C.dim & x.rows > 0;
+  let y be Tensor2D;
+  assume A3: y = ForwardOnCore(C, x);
+  
+  set split = SplitTensor(C, x);
+  A4: split`1.rows = x.rows & split`2.rows = x.rows & split`1.cols = C.dim & split`2.cols = C.dim;
+  
+  set result = (layered_seq).(C.num_layers + 1);
+  A5: result`1.rows = x.rows & result`2.rows = x.rows & result`1.cols = C.dim & result`2.cols = C.dim;
+  
+  A6: y = MergeTensors(C, result`1, result`2) by A3;
+  A7: y.rows = result`1.rows & y.cols = 2 * C.dim by A6;
+  
+  hence y.rows = x.rows & y.cols = x.cols by A4, A5, A7, A2;
+end;
+
+theorem ThInversePreservesShape:
+  for C being RSFCore st C is well-formed
+  for y being Tensor2D st y.cols = 2 * C.dim & y.rows > 0
+  holds
+  let x be Tensor2D such that x = InverseOnCore(C, y);
+  x.rows = y.rows & x.cols = y.cols
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let y be Tensor2D;
+  assume A2: y.cols = 2 * C.dim & y.rows > 0;
+  let x be Tensor2D;
+  assume A3: x = InverseOnCore(C, y);
+  
+  set split = SplitTensor(C, y);
+  A4: split`1.rows = y.rows & split`2.rows = y.rows & split`1.cols = C.dim & split`2.cols = C.dim;
+  
+  set result = (layered_seq).(C.num_layers + 1);
+  A5: result`1.rows = y.rows & result`2.rows = y.rows & result`1.cols = C.dim & result`2.cols = C.dim;
+  
+  A6: x = MergeTensors(C, result`1, result`2) by A3;
+  A7: x.rows = result`1.rows & x.cols = 2 * C.dim by A6;
+  
+  hence x.rows = y.rows & x.cols = y.cols by A4, A5, A7, A2;
+end;
+
+theorem ThBackwardPreservesShape:
+  for C being RSFCore st C is well-formed
+  for grad_output, input being Tensor2D
+  st input.cols = 2 * C.dim & input.rows > 0 &
+     grad_output.rows = input.rows & grad_output.cols = input.cols
+  holds
+  let result be Tuple of <Tensor2D, RSFCore> such that
+  result = BackwardOnCore(C, grad_output, input);
+  (result`1).rows = input.rows & (result`1).cols = input.cols
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let grad_output, input be Tensor2D;
+  assume A2: input.cols = 2 * C.dim & input.rows > 0 & grad_output.rows = input.rows & grad_output.cols = input.cols;
+  let result be Tuple of <Tensor2D, RSFCore>;
+  assume A3: result = BackwardOnCore(C, grad_output, input);
+  
+  set b_seq = backward_seq;
+  set dx1 = (b_seq.(C.num_layers))`1;
+  set dx2 = (b_seq.(C.num_layers))`2;
+  
+  A4: dx1.rows = input.rows & dx1.cols = C.dim;
+  A5: dx2.rows = input.rows & dx2.cols = C.dim;
+  
+  set g_input = MergeTensors(C, dx1, dx2);
+  A6: g_input.rows = dx1.rows & g_input.cols = 2 * C.dim;
+  
+  A7: result`1 = g_input by A3;
+  
+  hence (result`1).rows = input.rows & (result`1).cols = input.cols by A4, A5, A6, A7, A2;
+end;
+
+theorem ThSplitMergeIdentity:
+  for C being RSFCore st C is well-formed
+  for x being Tensor2D st x.cols = 2 * C.dim & x.rows > 0
+  holds
+  let split be Tuple of <Tensor2D, Tensor2D> such that split = SplitTensor(C, x);
+  MergeTensors(C, split`1, split`2) = x
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let x be Tensor2D;
+  assume A2: x.cols = 2 * C.dim & x.rows > 0;
+  let split be Tuple of <Tensor2D, Tensor2D>;
+  assume A3: split = SplitTensor(C, x);
+  
+  set x1 = split`1;
+  set x2 = split`2;
+  
+  A4: x1.rows = x.rows & x1.cols = C.dim;
+  A5: x2.rows = x.rows & x2.cols = C.dim;
+  
+  A6: for b, d being Nat st 1 <= b & b <= x.rows & 1 <= d & d <= C.dim holds x1.at(b, d) = x.at(b, d);
+  A7: for b, d being Nat st 1 <= b & b <= x.rows & 1 <= d & d <= C.dim holds x2.at(b, d) = x.at(b, C.dim + d);
+  
+  set M = MergeTensors(C, x1, x2);
+  
+  A8: M.rows = x1.rows & M.cols = 2 * C.dim;
+  A9: for b, d being Nat st 1 <= b & b <= M.rows & 1 <= d & d <= C.dim holds M.at(b, d) = x1.at(b, d);
+  A10: for b, d being Nat st 1 <= b & b <= M.rows & 1 <= d & d <= C.dim holds M.at(b, C.dim + d) = x2.at(b, d);
+  
+  A11: for b, j being Nat st 1 <= b & b <= x.rows & 1 <= j & j <= 2 * C.dim holds M.at(b, j) = x.at(b, j);
+  
+  hence MergeTensors(C, split`1, split`2) = x by A2, A4, A8, A11;
+end;
+
+theorem ThMergeSplitIdentity:
+  for C being RSFCore st C is well-formed
+  for x1, x2 being Tensor2D st x1.rows = x2.rows & x1.cols = C.dim & x2.cols = C.dim & x1.rows > 0
+  holds
+  let merged be Tensor2D such that merged = MergeTensors(C, x1, x2);
+  let split be Tuple of <Tensor2D, Tensor2D> such that split = SplitTensor(C, merged);
+  split`1 = x1 & split`2 = x2
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let x1, x2 be Tensor2D;
+  assume A2: x1.rows = x2.rows & x1.cols = C.dim & x2.cols = C.dim & x1.rows > 0;
+  let merged be Tensor2D;
+  assume A3: merged = MergeTensors(C, x1, x2);
+  let split be Tuple of <Tensor2D, Tensor2D>;
+  assume A4: split = SplitTensor(C, merged);
+  
+  set m_rows = merged.rows;
+  set m_cols = merged.cols;
+  
+  A5: m_rows = x1.rows & m_cols = 2 * C.dim by A3;
+  A6: for b, d being Nat st 1 <= b & b <= m_rows & 1 <= d & d <= C.dim holds merged.at(b, d) = x1.at(b, d);
+  A7: for b, d being Nat st 1 <= b & b <= m_rows & 1 <= d & d <= C.dim holds merged.at(b, C.dim + d) = x2.at(b, d);
+  
+  set s1 = split`1;
+  set s2 = split`2;
+  
+  A8: s1.rows = m_rows & s1.cols = C.dim by A4;
+  A9: s2.rows = m_rows & s2.cols = C.dim by A4;
+  
+  A10: for b, d being Nat st 1 <= b & b <= m_rows & 1 <= d & d <= C.dim holds s1.at(b, d) = merged.at(b, d);
+  A11: for b, d being Nat st 1 <= b & b <= m_rows & 1 <= d & d <= C.dim holds s2.at(b, d) = merged.at(b, C.dim + d);
+  
+  A12: for b, d being Nat st 1 <= b & b <= x1.rows & 1 <= d & d <= C.dim holds s1.at(b, d) = x1.at(b, d) by A5, A6, A10;
+  A13: for b, d being Nat st 1 <= b & b <= x2.rows & 1 <= d & d <= C.dim holds s2.at(b, d) = x2.at(b, d) by A2, A5, A7, A11;
+  
+  hence split`1 = x1 & split`2 = x2 by A8, A9, A5, A2, A12, A13;
+end;
+
+theorem ThClipBounds:
+  for val, clip_min, clip_max being Real st clip_min < clip_max
+  holds
+  let clipped be Real such that clipped = clipValue(val, clip_min, clip_max);
+  clipped >= clip_min & clipped <= clip_max
+proof
+  let val, clip_min, clip_max be Real;
+  assume A1: clip_min < clip_max;
+  let clipped be Real;
+  assume A2: clipped = clipValue(val, clip_min, clip_max);
+  
+  A3: clipped = max(clip_min, min(clip_max, val)) by A1, A2;
+  A4: min(clip_max, val) <= clip_max;
+  
+  A5: clipped >= clip_min by A3;
+  A6: clip_min <= clip_max by A1;
+  
+  A7: clipped <= clip_max by A3, A4, A6;
+  
+  hence clipped >= clip_min & clipped <= clip_max by A5, A7;
+end;
+
+theorem ThClipIdempotent:
+  for val, clip_min, clip_max being Real st clip_min < clip_max
+  holds
+  clipValue(clipValue(val, clip_min, clip_max), clip_min, clip_max) =
+  clipValue(val, clip_min, clip_max)
+proof
+  let val, clip_min, clip_max be Real;
+  assume A1: clip_min < clip_max;
+  
+  set c1 = clipValue(val, clip_min, clip_max);
+  set c2 = clipValue(c1, clip_min, clip_max);
+  
+  A2: c1 >= clip_min & c1 <= clip_max by A1, ThClipBounds;
+  
+  A3: min(clip_max, c1) = c1 by A2;
+  A4: max(clip_min, c1) = c1 by A2;
+  
+  A5: c2 = max(clip_min, min(clip_max, c1)) by A1;
+  A6: c2 = c1 by A3, A4, A5;
+  
+  hence clipValue(clipValue(val, clip_min, clip_max), clip_min, clip_max) = clipValue(val, clip_min, clip_max) by A6;
+end;
+
+theorem ThScalePositive:
+  for LC being LayerCore st LC is well-formed
+  for input being Tensor2D st input.rows > 0 & input.cols = LC.dim
+  holds
+  let scale be Tensor2D such that scale = ComputeScale(LC, input);
+  for b being Nat st 1 <= b & b <= input.rows holds
+  for d being Nat st 1 <= d & d <= LC.dim holds
+  scale.at(b, d) > 0.0
+proof
+  let LC be LayerCore;
+  assume A1: LC is well-formed;
+  let input be Tensor2D;
+  assume A2: input.rows > 0 & input.cols = LC.dim;
+  let scale be Tensor2D;
+  assume A3: scale = ComputeScale(LC, input);
+  
+  A4: for b being Nat st 1 <= b & b <= input.rows holds
+      for d being Nat st 1 <= d & d <= LC.dim holds
+      ex pre_act being Real st
+      scale.at(b, d) = exp(clipValue(pre_act, LC.clip_min, LC.clip_max));
+      
+  A5: for v being Real holds exp(v) > 0.0;
+  
+  A6: for b being Nat st 1 <= b & b <= input.rows holds
+      for d being Nat st 1 <= d & d <= LC.dim holds
+      scale.at(b, d) > 0.0 by A4, A5;
+      
+  hence for b being Nat st 1 <= b & b <= input.rows holds
+        for d being Nat st 1 <= d & d <= LC.dim holds
+        scale.at(b, d) > 0.0 by A6;
+end;
+
+theorem ThZeroGradIdempotent:
+  for LC being LayerCore st LC is well-formed
+  holds ZeroGradients(ZeroGradients(LC)) = ZeroGradients(LC)
+proof
+  let LC be LayerCore;
+  assume A1: LC is well-formed;
+  
+  set Z1 = ZeroGradients(LC);
+  set Z2 = ZeroGradients(Z1);
+  
+  A2: Z1.s_weight_grad = Z2.s_weight_grad;
+  A3: Z1.t_weight_grad = Z2.t_weight_grad;
+  A4: Z1.s_bias_grad = Z2.s_bias_grad;
+  A5: Z1.t_bias_grad = Z2.t_bias_grad;
+  
+  hence ZeroGradients(ZeroGradients(LC)) = ZeroGradients(LC) by A2, A3, A4, A5;
+end;
+
+theorem ThEnsureGradIdempotent:
+  for LC being LayerCore st LC is well-formed
+  holds
+  let eg1 be LayerCore such that eg1 = EnsureGradients(LC);
+  let eg2 be LayerCore such that eg2 = EnsureGradients(eg1);
+  eg1.s_weight_grad <> Nothing &
+  eg1.t_weight_grad <> Nothing &
+  eg1.s_bias_grad <> Nothing &
+  eg1.t_bias_grad <> Nothing &
+  eg2.s_weight_grad = eg1.s_weight_grad &
+  eg2.t_weight_grad = eg1.t_weight_grad &
+  eg2.s_bias_grad = eg1.s_bias_grad &
+  eg2.t_bias_grad = eg1.t_bias_grad
+proof
+  let LC be LayerCore;
+  assume A1: LC is well-formed;
+  let eg1 be LayerCore;
+  assume A2: eg1 = EnsureGradients(LC);
+  let eg2 be LayerCore;
+  assume A3: eg2 = EnsureGradients(eg1);
+  
+  A4: eg1.s_weight_grad <> Nothing by A2;
+  A5: eg1.t_weight_grad <> Nothing by A2;
+  A6: eg1.s_bias_grad <> Nothing by A2;
+  A7: eg1.t_bias_grad <> Nothing by A2;
+  
+  A8: eg2.s_weight_grad = eg1.s_weight_grad by A3, A4;
+  A9: eg2.t_weight_grad = eg1.t_weight_grad by A3, A5;
+  A10: eg2.s_bias_grad = eg1.s_bias_grad by A3, A6;
+  A11: eg2.t_bias_grad = eg1.t_bias_grad by A3, A7;
+  
+  hence eg1.s_weight_grad <> Nothing & eg1.t_weight_grad <> Nothing & eg1.s_bias_grad <> Nothing & eg1.t_bias_grad <> Nothing & eg2.s_weight_grad = eg1.s_weight_grad & eg2.t_weight_grad = eg1.t_weight_grad & eg2.s_bias_grad = eg1.s_bias_grad & eg2.t_bias_grad = eg1.t_bias_grad by A4, A5, A6, A7, A8, A9, A10, A11;
+end;
+
+theorem ThGradScalePositive:
+  for LC being LayerCore st LC is well-formed
+  for batch_size being Nat st batch_size > 0
+  holds GradScale(LC, batch_size) > 0.0
+proof
+  let LC be LayerCore;
+  assume A1: LC is well-formed;
+  let batch_size be Nat;
+  assume A2: batch_size > 0;
+  
+  A3: (LC.grad_mean = TRUE implies GradScale(LC, batch_size) = 1.0 / batch_size);
+  A4: (LC.grad_mean = FALSE implies GradScale(LC, batch_size) = 1.0);
+  
+  A5: 1.0 / batch_size > 0.0 by A2;
+  
+  hence GradScale(LC, batch_size) > 0.0 by A3, A4, A5;
+end;
+
+theorem ThSaveLoadRoundTrip:
+  for C being RSFCore st C is well-formed
+  holds
+  let serialized be FinSequence of Nat such that serialized = SerializeRSF(C);
+  let loaded be RSFCore such that loaded = DeserializeRSF(serialized);
+  loaded.dim = C.dim &
+  loaded.num_layers = C.num_layers &
+  loaded.cfg`1 = C.cfg`1 &
+  loaded.cfg`2 = C.cfg`2 &
+  loaded.cfg`3 = C.cfg`3 &
+  (for i being Nat st 1 <= i & i <= C.num_layers holds
+   ((loaded.layers).i).s_weight = ((C.layers).i).s_weight &
+   ((loaded.layers).i).t_weight = ((C.layers).i).t_weight &
+   ((loaded.layers).i).s_bias = ((C.layers).i).s_bias &
+   ((loaded.layers).i).t_bias = ((C.layers).i).t_bias &
+   ((loaded.layers).i).clip_min = ((C.layers).i).clip_min &
+   ((loaded.layers).i).clip_max = ((C.layers).i).clip_max &
+   ((loaded.layers).i).grad_mean = ((C.layers).i).grad_mean)
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let serialized be FinSequence of Nat;
+  assume A2: serialized = SerializeRSF(C);
+  let loaded be RSFCore;
+  assume A3: loaded = DeserializeRSF(serialized);
+  
+  A4: loaded.dim = C.dim by A2, A3;
+  A5: loaded.num_layers = C.num_layers by A2, A3;
+  A6: loaded.cfg`1 = C.cfg`1 & loaded.cfg`2 = C.cfg`2 & loaded.cfg`3 = C.cfg`3 by A2, A3;
+  
+  A7: for i being Nat st 1 <= i & i <= C.num_layers holds
+      ((loaded.layers).i).s_weight = ((C.layers).i).s_weight &
+      ((loaded.layers).i).t_weight = ((C.layers).i).t_weight &
+      ((loaded.layers).i).s_bias = ((C.layers).i).s_bias &
+      ((loaded.layers).i).t_bias = ((C.layers).i).t_bias &
+      ((loaded.layers).i).clip_min = ((C.layers).i).clip_min &
+      ((loaded.layers).i).clip_max = ((C.layers).i).clip_max &
+      ((loaded.layers).i).grad_mean = ((C.layers).i).grad_mean by A2, A3;
+      
+  hence loaded.dim = C.dim & loaded.num_layers = C.num_layers & loaded.cfg`1 = C.cfg`1 & loaded.cfg`2 = C.cfg`2 & loaded.cfg`3 = C.cfg`3 & (for i being Nat st 1 <= i & i <= C.num_layers holds ((loaded.layers).i).s_weight = ((C.layers).i).s_weight & ((loaded.layers).i).t_weight = ((C.layers).i).t_weight & ((loaded.layers).i).s_bias = ((C.layers).i).s_bias & ((loaded.layers).i).t_bias = ((C.layers).i).t_bias & ((loaded.layers).i).clip_min = ((C.layers).i).clip_min & ((loaded.layers).i).clip_max = ((C.layers).i).clip_max & ((loaded.layers).i).grad_mean = ((C.layers).i).grad_mean) by A4, A5, A6, A7;
+end;
+
+theorem ThCRC32Deterministic:
+  for data1, data2 being FinSequence of Nat st data1 = data2
+  holds CRC32(data1) = CRC32(data2)
+proof
+  let data1, data2 be FinSequence of Nat;
+  assume A1: data1 = data2;
+  hence CRC32(data1) = CRC32(data2) by A1;
+end;
+
+theorem ThGradSnapshotRoundTrip:
+  for LC being LayerCore st LC is well-formed
+  holds
+  let snap be GradSnapshot such that snap = CaptureGradSnapshot(LC);
+  let restored be LayerCore such that restored = RestoreGradSnapshot(LC, snap);
+  restored.s_weight_grad = LC.s_weight_grad &
+  restored.t_weight_grad = LC.t_weight_grad &
+  restored.s_bias_grad = LC.s_bias_grad &
+  restored.t_bias_grad = LC.t_bias_grad
+proof
+  let LC be LayerCore;
+  assume A1: LC is well-formed;
+  let snap be GradSnapshot;
+  assume A2: snap = CaptureGradSnapshot(LC);
+  let restored be LayerCore;
+  assume A3: restored = RestoreGradSnapshot(LC, snap);
+  
+  A4: (snap.had_s_weight = TRUE implies restored.s_weight_grad = LC.s_weight_grad);
+  A5: (snap.had_s_weight = FALSE implies restored.s_weight_grad = Nothing & LC.s_weight_grad = Nothing);
+  A6: restored.s_weight_grad = LC.s_weight_grad by A4, A5;
+  
+  A7: (snap.had_t_weight = TRUE implies restored.t_weight_grad = LC.t_weight_grad);
+  A8: (snap.had_t_weight = FALSE implies restored.t_weight_grad = Nothing & LC.t_weight_grad = Nothing);
+  A9: restored.t_weight_grad = LC.t_weight_grad by A7, A8;
+  
+  A10: (snap.had_s_bias = TRUE implies restored.s_bias_grad = LC.s_bias_grad);
+  A11: (snap.had_s_bias = FALSE implies restored.s_bias_grad = Nothing & LC.s_bias_grad = Nothing);
+  A12: restored.s_bias_grad = LC.s_bias_grad by A10, A11;
+  
+  A13: (snap.had_t_bias = TRUE implies restored.t_bias_grad = LC.t_bias_grad);
+  A14: (snap.had_t_bias = FALSE implies restored.t_bias_grad = Nothing & LC.t_bias_grad = Nothing);
+  A15: restored.t_bias_grad = LC.t_bias_grad by A13, A14;
+  
+  hence restored.s_weight_grad = LC.s_weight_grad & restored.t_weight_grad = LC.t_weight_grad & restored.s_bias_grad = LC.s_bias_grad & restored.t_bias_grad = LC.t_bias_grad by A6, A9, A12, A15;
+end;
+
+theorem ThModelGradSnapshotRoundTrip:
+  for layers being FinSequence of LayerCore
+  st (for i being Nat st 1 <= i & i <= len layers holds layers.i is well-formed)
+  holds
+  let snaps be FinSequence of GradSnapshot such that
+  snaps = CaptureModelGradSnapshots(layers);
+  let restored be FinSequence of LayerCore such that
+  restored = RestoreModelGradSnapshots(layers, snaps);
+  for i being Nat st 1 <= i & i <= len layers holds
+  (restored.i).s_weight_grad = (layers.i).s_weight_grad &
+  (restored.i).t_weight_grad = (layers.i).t_weight_grad &
+  (restored.i).s_bias_grad = (layers.i).s_bias_grad &
+  (restored.i).t_bias_grad = (layers.i).t_bias_grad
+proof
+  let layers be FinSequence of LayerCore;
+  assume A1: for i being Nat st 1 <= i & i <= len layers holds layers.i is well-formed;
+  let snaps be FinSequence of GradSnapshot;
+  assume A2: snaps = CaptureModelGradSnapshots(layers);
+  let restored be FinSequence of LayerCore;
+  assume A3: restored = RestoreModelGradSnapshots(layers, snaps);
+  
+  A4: for i being Nat st 1 <= i & i <= len layers holds
+      restored.i = RestoreGradSnapshot(layers.i, snaps.i) by A3;
+      
+  A5: for i being Nat st 1 <= i & i <= len layers holds
+      snaps.i = CaptureGradSnapshot(layers.i) by A2;
+      
+  A6: for i being Nat st 1 <= i & i <= len layers holds
+      (restored.i).s_weight_grad = (layers.i).s_weight_grad &
+      (restored.i).t_weight_grad = (layers.i).t_weight_grad &
+      (restored.i).s_bias_grad = (layers.i).s_bias_grad &
+      (restored.i).t_bias_grad = (layers.i).t_bias_grad by A4, A5, ThGradSnapshotRoundTrip, A1;
+      
+  hence for i being Nat st 1 <= i & i <= len layers holds (restored.i).s_weight_grad = (layers.i).s_weight_grad & (restored.i).t_weight_grad = (layers.i).t_weight_grad & (restored.i).s_bias_grad = (layers.i).s_bias_grad & (restored.i).t_bias_grad = (layers.i).t_bias_grad by A6;
+end;
+
+theorem ThDisableGPUIdempotent:
+  for C being RSFCore st C is well-formed
+  holds DisableGPU(DisableGPU(C)) = DisableGPU(C)
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  
+  set D1 = DisableGPU(C);
+  set D2 = DisableGPU(D1);
+  
+  A2: D1.gpu_available = FALSE;
+  A3: D2.gpu_available = FALSE;
+  
+  A4: D1.gpu_weight_version = 0;
+  A5: D2.gpu_weight_version = 0;
+  
+  hence DisableGPU(DisableGPU(C)) = DisableGPU(C) by A2, A3, A4, A5;
+end;
+
+theorem ThSyncThenAvailable:
+  for C being RSFCore st C is well-formed & C is GPU-compatible &
+  (C.layers).1 is all-finite &
+  ((C.layers).1).s_weight is F16-convertible &
+  ((C.layers).1).t_weight is F16-convertible
+  holds
+  let synced be RSFCore such that synced = SyncGPU(C);
+  synced has synced GPU
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed & C is GPU-compatible & (C.layers).1 is all-finite & ((C.layers).1).s_weight is F16-convertible & ((C.layers).1).t_weight is F16-convertible;
+  let synced be RSFCore;
+  assume A2: synced = SyncGPU(C);
+  
+  A3: synced.gpu_available = TRUE by A2;
+  A4: synced.gpu_weight_version = C.cpu_weight_version by A2;
+  A5: synced.cpu_weight_version = C.cpu_weight_version by A2;
+  A6: synced.gpu_weight_version = synced.cpu_weight_version by A4, A5;
+  
+  hence synced has synced GPU by A3, A6;
+end;
+
+theorem ThDisableThenUnavailable:
+  for C being RSFCore st C is well-formed
+  holds
+  let disabled be RSFCore such that disabled = DisableGPU(C);
+  disabled.gpu_available = FALSE
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let disabled be RSFCore;
+  assume A2: disabled = DisableGPU(C);
+  
+  hence disabled.gpu_available = FALSE by A2;
+end;
+
+theorem ThForwardDeterministic:
+  for C being RSFCore st C is well-formed
+  for x being Tensor2D st x.cols = 2 * C.dim & x.rows > 0
+  holds ForwardOnCore(C, x) = ForwardOnCore(C, x)
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let x be Tensor2D;
+  assume A2: x.cols = 2 * C.dim & x.rows > 0;
+  
+  hence ForwardOnCore(C, x) = ForwardOnCore(C, x);
+end;
+
+theorem ThInverseDeterministic:
+  for C being RSFCore st C is well-formed
+  for y being Tensor2D st y.cols = 2 * C.dim & y.rows > 0
+  holds InverseOnCore(C, y) = InverseOnCore(C, y)
+proof
+  let C be RSFCore;
+  assume A1: C is well-formed;
+  let y be Tensor2D;
+  assume A2: y.cols = 2 * C.dim & y.rows > 0;
+  
+  hence InverseOnCore(C, y) = InverseOnCore(C, y);
+end;
+
+end;

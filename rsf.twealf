@@ -1,0 +1,1759 @@
+nat : type.
+z : nat.
+s : nat -> nat.
+
+nat-id : nat -> nat -> type.
+nat-id/refl : nat-id N N.
+
+plus : nat -> nat -> nat -> type.
+plus/z : plus z N N.
+plus/s : plus (s M) N (s P) <- plus M N P.
+
+%mode plus +M +N -P.
+%worlds () (plus _ _ _).
+%total M (plus M _ _).
+
+plus-unique : plus M N P -> plus M N Q -> nat-id P Q -> type.
+%mode plus-unique +D1 +D2 -Eid.
+plus-unique/z : plus-unique plus/z plus/z nat-id/refl.
+plus-unique/s : plus-unique (plus/s D1) (plus/s D2) nat-id/refl
+                 <- plus-unique D1 D2 nat-id/refl.
+%worlds () (plus-unique _ _ _).
+%total D1 (plus-unique D1 _ _).
+
+plus-z-right : {N:nat} plus N z N -> type.
+%mode plus-z-right +N -D.
+plus-z-right/z : plus-z-right z plus/z.
+plus-z-right/s : plus-z-right (s N) (plus/s D) <- plus-z-right N D.
+%worlds () (plus-z-right _ _).
+%total N (plus-z-right N _).
+
+plus-s-right : plus M N P -> plus M (s N) (s P) -> type.
+%mode plus-s-right +D1 -D2.
+plus-s-right/z : plus-s-right plus/z plus/z.
+plus-s-right/s : plus-s-right (plus/s D1) (plus/s D2) <- plus-s-right D1 D2.
+%worlds () (plus-s-right _ _).
+%total D1 (plus-s-right D1 _).
+
+plus-comm : plus M N P -> plus N M P -> type.
+%mode plus-comm +D1 -D2.
+plus-comm/z : plus-comm (plus/z : plus z N N) D
+               <- plus-z-right N D.
+plus-comm/s : plus-comm (plus/s D1sub : plus (s M') N (s P')) D2out
+               <- plus-comm D1sub D1comm
+               <- plus-s-right D1comm D2out.
+%worlds () (plus-comm _ _).
+%total D1 (plus-comm D1 _).
+
+plus-total : {M:nat} {N:nat} plus M N P -> type.
+%mode plus-total +M +N -D.
+plus-total/z : plus-total z N plus/z.
+plus-total/s : plus-total (s M) N (plus/s D) <- plus-total M N D.
+%worlds () (plus-total _ _ _).
+%total M (plus-total M _ _).
+
+plus-assoc : plus A B AB -> plus AB C ABC -> plus B C BC -> plus A BC ABC -> type.
+%mode plus-assoc +D1 +D2 -D3 -D4.
+plus-assoc/z : plus-assoc plus/z D2 D2 plus/z.
+plus-assoc/s : plus-assoc (plus/s D1) (plus/s D2) D3 (plus/s D4)
+                <- plus-assoc D1 D2 D3 D4.
+%worlds () (plus-assoc _ _ _ _).
+%total D1 (plus-assoc D1 _ _ _).
+
+leq : nat -> nat -> type.
+leq/z : leq z N.
+leq/s : leq (s M) (s N) <- leq M N.
+
+leq-refl : {N:nat} leq N N -> type.
+%mode leq-refl +N -D.
+leq-refl/z : leq-refl z leq/z.
+leq-refl/s : leq-refl (s N) (leq/s D) <- leq-refl N D.
+%worlds () (leq-refl _ _).
+%total N (leq-refl N _).
+
+leq-trans : leq A B -> leq B C -> leq A C -> type.
+%mode leq-trans +D1 +D2 -D3.
+leq-trans/z : leq-trans leq/z _ leq/z.
+leq-trans/s : leq-trans (leq/s D1) (leq/s D2) (leq/s D3) <- leq-trans D1 D2 D3.
+%worlds () (leq-trans _ _ _).
+%total D1 (leq-trans D1 _ _).
+
+leq-antisym : leq A B -> leq B A -> nat-id A B -> type.
+%mode leq-antisym +D1 +D2 -Eid.
+leq-antisym/z : leq-antisym leq/z leq/z nat-id/refl.
+leq-antisym/s : leq-antisym (leq/s D1) (leq/s D2) nat-id/refl
+                 <- leq-antisym D1 D2 nat-id/refl.
+%worlds () (leq-antisym _ _ _).
+%total D1 (leq-antisym D1 _ _).
+
+leq-step : leq A B -> leq A (s B) -> type.
+%mode leq-step +D1 -D2.
+leq-step/z : leq-step leq/z leq/z.
+leq-step/s : leq-step (leq/s D) (leq/s D') <- leq-step D D'.
+%worlds () (leq-step _ _).
+%total D1 (leq-step D1 _).
+
+leq-s : {N:nat} leq N (s N) -> type.
+%mode leq-s +N -D.
+leq-s/z : leq-s z leq/z.
+leq-s/s : leq-s (s N) (leq/s D) <- leq-s N D.
+%worlds () (leq-s _ _).
+%total N (leq-s N _).
+
+lt : nat -> nat -> type.
+lt/z : lt z (s N).
+lt/s : lt (s M) (s N) <- lt M N.
+
+lt-leq : lt A B -> leq A B -> type.
+%mode lt-leq +D1 -D2.
+lt-leq/z : lt-leq lt/z leq/z.
+lt-leq/s : lt-leq (lt/s D1) (leq/s D2) <- lt-leq D1 D2.
+%worlds () (lt-leq _ _).
+%total D1 (lt-leq D1 _).
+
+lt-succ : {N:nat} lt N (s N) -> type.
+%mode lt-succ +N -D.
+lt-succ/z : lt-succ z lt/z.
+lt-succ/s : lt-succ (s N) (lt/s D) <- lt-succ N D.
+%worlds () (lt-succ _ _).
+%total N (lt-succ N _).
+
+lt-trans : lt A B -> lt B C -> lt A C -> type.
+%mode lt-trans +D1 +D2 -D3.
+lt-trans/zs : lt-trans (lt/z : lt z (s _)) (lt/s _ : lt (s _) (s _)) lt/z.
+lt-trans/ss : lt-trans (lt/s D1) (lt/s D2) (lt/s D3) <- lt-trans D1 D2 D3.
+%worlds () (lt-trans _ _ _).
+%total D1 (lt-trans D1 _ _).
+
+lt-wf : lt A B -> leq (s A) B -> type.
+%mode lt-wf +D1 -D2.
+lt-wf/z : lt-wf lt/z (leq/s leq/z).
+lt-wf/s : lt-wf (lt/s D1) (leq/s D2) <- lt-wf D1 D2.
+%worlds () (lt-wf _ _).
+%total D1 (lt-wf D1 _).
+
+sub : nat -> nat -> nat -> type.
+sub/z : sub N z N.
+sub/s : sub (s M) (s N) P <- sub M N P.
+
+%mode sub +M +N -P.
+%worlds () (sub _ _ _).
+
+sub-unique : sub M N P -> sub M N Q -> nat-id P Q -> type.
+%mode sub-unique +D1 +D2 -Eid.
+sub-unique/z : sub-unique sub/z sub/z nat-id/refl.
+sub-unique/s : sub-unique (sub/s D1) (sub/s D2) Eid <- sub-unique D1 D2 Eid.
+%worlds () (sub-unique _ _ _).
+%total D1 (sub-unique D1 _ _).
+
+sub-s-left : sub M N P -> sub (s M) N (s P) -> type.
+%mode sub-s-left +D1 -D2.
+sub-s-left/z : sub-s-left sub/z sub/z.
+sub-s-left/s : sub-s-left (sub/s D1) (sub/s D2) <- sub-s-left D1 D2.
+%worlds () (sub-s-left _ _).
+%total D1 (sub-s-left D1 _).
+
+add-sub-cancel : plus A B C -> sub C B A -> type.
+%mode add-sub-cancel +Dp -Ds.
+add-sub-cancel/z : add-sub-cancel plus/z sub/z.
+add-sub-cancel/s : add-sub-cancel (plus/s Dp) Ds
+                    <- add-sub-cancel Dp Ds'
+                    <- sub-s-left Ds' Ds.
+%worlds () (add-sub-cancel _ _).
+%total Dp (add-sub-cancel Dp _).
+
+sub-add-cancel : sub C B A -> plus A B C -> type.
+%mode sub-add-cancel +Ds -Dp.
+sub-add-cancel/z : sub-add-cancel sub/z plus/z.
+sub-add-cancel/s : sub-add-cancel (sub/s Ds) (plus/s Dp) <- sub-add-cancel Ds Dp.
+%worlds () (sub-add-cancel _ _).
+%total Ds (sub-add-cancel Ds _).
+
+sub-self : {N:nat} sub N N z -> type.
+%mode sub-self +N -D.
+sub-self/z : sub-self z sub/z.
+sub-self/s : sub-self (s N) (sub/s D) <- sub-self N D.
+%worlds () (sub-self _ _).
+%total N (sub-self N _).
+
+times : nat -> nat -> nat -> type.
+times/z : times z N z.
+times/s : times (s M) N P <- times M N Q <- plus Q N P.
+
+%mode times +M +N -P.
+%worlds () (times _ _ _).
+%total M (times M _ _).
+
+times-unique : times M N P -> times M N Q -> nat-id P Q -> type.
+%mode times-unique +D1 +D2 -Eid.
+times-unique/z : times-unique times/z times/z nat-id/refl.
+times-unique/s : times-unique (times/s Dp1 Dt1) (times/s Dp2 Dt2) Eid
+                  <- times-unique Dt1 Dt2 nat-id/refl
+                  <- plus-unique Dp1 Dp2 Eid.
+%worlds () (times-unique _ _ _).
+%total D1 (times-unique D1 _ _).
+
+times-total : {M:nat} {N:nat} times M N P -> type.
+%mode times-total +M +N -D.
+times-total/z : times-total z N times/z.
+times-total/s : times-total (s M) N (times/s Dp Dt)
+                 <- times-total M N Dt
+                 <- plus-total _ N Dp.
+%worlds () (times-total _ _ _).
+%total M (times-total M _ _).
+
+times-z-right : {M:nat} times M z z -> type.
+%mode times-z-right +M -D.
+times-z-right/z : times-z-right z times/z.
+times-z-right/s : times-z-right (s M) (times/s plus/z D) <- times-z-right M D.
+%worlds () (times-z-right _ _).
+%total M (times-z-right M _).
+
+bool : type.
+btrue : bool.
+bfalse : bool.
+
+bool-id : bool -> bool -> type.
+bool-id/refl : bool-id B B.
+
+opt : type -> type.
+none : opt T.
+some : T -> opt T.
+
+vec : nat -> type.
+vec/nil : vec z.
+vec/cons : nat -> vec N -> vec (s N).
+
+vec-id : {N:nat} vec N -> vec N -> type.
+vec-id/refl : vec-id N V V.
+
+vec-add : {N:nat} vec N -> vec N -> vec N -> type.
+vec-add/nil : vec-add z vec/nil vec/nil vec/nil.
+vec-add/cons : vec-add (s N) (vec/cons A As) (vec/cons B Bs) (vec/cons C Cs)
+                <- plus A B C
+                <- vec-add N As Bs Cs.
+
+%mode vec-add +N +V1 +V2 -V3.
+%worlds () (vec-add _ _ _ _).
+%total N (vec-add N _ _ _).
+
+vec-add-unique : vec-add N V1 V2 V3 -> vec-add N V1 V2 V4 -> vec-id N V3 V4 -> type.
+%mode vec-add-unique +D1 +D2 -Eid.
+vec-add-unique/nil : vec-add-unique vec-add/nil vec-add/nil (vec-id/refl).
+vec-add-unique/cons : vec-add-unique
+                       (vec-add/cons Dv1 Dp1 : vec-add (s N) (vec/cons A As) (vec/cons B Bs) (vec/cons C Cs))
+                       (vec-add/cons Dv2 Dp2 : vec-add (s N) (vec/cons A As) (vec/cons B Bs) (vec/cons C' Cs'))
+                       Eid
+                       <- plus-unique Dp1 Dp2 (nat-id/refl : nat-id C C)
+                       <- vec-add-unique Dv1 Dv2 (vec-id/refl : vec-id N Cs Cs)
+                       .
+%worlds () (vec-add-unique _ _ _).
+%total D1 (vec-add-unique D1 _ _).
+
+vec-add-total : {N:nat} {V1 : vec N} {V2 : vec N} vec-add N V1 V2 V3 -> type.
+%mode vec-add-total +N +V1 +V2 -D.
+vec-add-total/nil : vec-add-total z vec/nil vec/nil vec-add/nil.
+vec-add-total/cons : vec-add-total (s N) (vec/cons A As) (vec/cons B Bs) (vec-add/cons Dv Dp)
+                      <- plus-total A B Dp
+                      <- vec-add-total N As Bs Dv.
+%worlds () (vec-add-total _ _ _ _).
+%total N (vec-add-total N _ _ _).
+
+vec-sub : {N:nat} vec N -> vec N -> vec N -> type.
+vec-sub/nil : vec-sub z vec/nil vec/nil vec/nil.
+vec-sub/cons : vec-sub (s N) (vec/cons A As) (vec/cons B Bs) (vec/cons C Cs)
+                <- sub A B C
+                <- vec-sub N As Bs Cs.
+
+%mode vec-sub +N +V1 +V2 -V3.
+%worlds () (vec-sub _ _ _ _).
+
+vec-sub-unique : vec-sub N V1 V2 V3 -> vec-sub N V1 V2 V4 -> vec-id N V3 V4 -> type.
+%mode vec-sub-unique +D1 +D2 -Eid.
+vec-sub-unique/nil : vec-sub-unique vec-sub/nil vec-sub/nil (vec-id/refl).
+vec-sub-unique/cons : vec-sub-unique
+                       (vec-sub/cons Dv1 Ds1)
+                       (vec-sub/cons Dv2 Ds2)
+                       Eid
+                       <- sub-unique Ds1 Ds2 (nat-id/refl : nat-id C C)
+                       <- vec-sub-unique Dv1 Dv2 (vec-id/refl : vec-id N Cs Cs)
+                       .
+%worlds () (vec-sub-unique _ _ _).
+%total D1 (vec-sub-unique D1 _ _).
+
+vec-add-sub-cancel : vec-add N A B C -> vec-sub N C B A -> type.
+%mode vec-add-sub-cancel +Da -Ds.
+vec-add-sub-cancel/nil : vec-add-sub-cancel vec-add/nil vec-sub/nil.
+vec-add-sub-cancel/cons : vec-add-sub-cancel (vec-add/cons Dva Dpa) (vec-sub/cons Dvs Dss)
+                           <- add-sub-cancel Dpa Dss
+                           <- vec-add-sub-cancel Dva Dvs.
+%worlds () (vec-add-sub-cancel _ _).
+%total Da (vec-add-sub-cancel Da _).
+
+vec-sub-add-cancel : vec-sub N C B A -> vec-add N A B C -> type.
+%mode vec-sub-add-cancel +Ds -Da.
+vec-sub-add-cancel/nil : vec-sub-add-cancel vec-sub/nil vec-add/nil.
+vec-sub-add-cancel/cons : vec-sub-add-cancel (vec-sub/cons Dvs Dss) (vec-add/cons Dva Dpa)
+                           <- sub-add-cancel Dss Dpa
+                           <- vec-sub-add-cancel Dvs Dva.
+%worlds () (vec-sub-add-cancel _ _).
+%total Ds (vec-sub-add-cancel Ds _).
+
+vec-mul : {N:nat} vec N -> vec N -> vec N -> type.
+vec-mul/nil : vec-mul z vec/nil vec/nil vec/nil.
+vec-mul/cons : vec-mul (s N) (vec/cons A As) (vec/cons B Bs) (vec/cons C Cs)
+                <- times A B C
+                <- vec-mul N As Bs Cs.
+
+%mode vec-mul +N +V1 +V2 -V3.
+%worlds () (vec-mul _ _ _ _).
+%total N (vec-mul N _ _ _).
+
+vec-mul-unique : vec-mul N V1 V2 V3 -> vec-mul N V1 V2 V4 -> vec-id N V3 V4 -> type.
+%mode vec-mul-unique +D1 +D2 -Eid.
+vec-mul-unique/nil : vec-mul-unique vec-mul/nil vec-mul/nil (vec-id/refl).
+vec-mul-unique/cons : vec-mul-unique
+                       (vec-mul/cons Dv1 Dt1)
+                       (vec-mul/cons Dv2 Dt2)
+                       Eid
+                       <- times-unique Dt1 Dt2 (nat-id/refl : nat-id C C)
+                       <- vec-mul-unique Dv1 Dv2 (vec-id/refl : vec-id N Cs Cs)
+                       .
+%worlds () (vec-mul-unique _ _ _).
+%total D1 (vec-mul-unique D1 _ _).
+
+vec-mul-total : {N:nat} {V1 : vec N} {V2 : vec N} vec-mul N V1 V2 V3 -> type.
+%mode vec-mul-total +N +V1 +V2 -D.
+vec-mul-total/nil : vec-mul-total z vec/nil vec/nil vec-mul/nil.
+vec-mul-total/cons : vec-mul-total (s N) (vec/cons A As) (vec/cons B Bs) (vec-mul/cons Dv Dt)
+                      <- times-total A B Dt
+                      <- vec-mul-total N As Bs Dv.
+%worlds () (vec-mul-total _ _ _ _).
+%total N (vec-mul-total N _ _ _).
+
+vec-dot : {N:nat} vec N -> vec N -> nat -> type.
+vec-dot/nil : vec-dot z vec/nil vec/nil z.
+vec-dot/cons : vec-dot (s N) (vec/cons A As) (vec/cons B Bs) S
+                <- vec-dot N As Bs S'
+                <- times A B P
+                <- plus S' P S.
+
+%mode vec-dot +N +V1 +V2 -S.
+%worlds () (vec-dot _ _ _ _).
+%total N (vec-dot N _ _ _).
+
+vec-dot-unique : vec-dot N V1 V2 S1 -> vec-dot N V1 V2 S2 -> nat-id S1 S2 -> type.
+%mode vec-dot-unique +D1 +D2 -Eid.
+vec-dot-unique/nil : vec-dot-unique vec-dot/nil vec-dot/nil nat-id/refl.
+vec-dot-unique/cons : vec-dot-unique (vec-dot/cons Dp1 Dt1 Dd1) (vec-dot/cons Dp2 Dt2 Dd2) Eid
+                       <- vec-dot-unique Dd1 Dd2 nat-id/refl
+                       <- times-unique Dt1 Dt2 nat-id/refl
+                       <- plus-unique Dp1 Dp2 Eid.
+%worlds () (vec-dot-unique _ _ _).
+%total D1 (vec-dot-unique D1 _ _).
+
+vec-scale : {N:nat} nat -> vec N -> vec N -> type.
+vec-scale/nil : vec-scale z S vec/nil vec/nil.
+vec-scale/cons : vec-scale (s N) S (vec/cons A As) (vec/cons B Bs)
+                  <- times S A B
+                  <- vec-scale N S As Bs.
+
+%mode vec-scale +N +S +V -V'.
+%worlds () (vec-scale _ _ _ _).
+%total N (vec-scale N _ _ _).
+
+vec-zero : {N:nat} vec N -> type.
+%mode vec-zero +N -V.
+vec-zero/nil : vec-zero z vec/nil.
+vec-zero/cons : vec-zero (s N) (vec/cons z V) <- vec-zero N V.
+%worlds () (vec-zero _ _).
+%total N (vec-zero N _).
+
+mat : nat -> nat -> type.
+mat/nil : mat z C.
+mat/cons : vec C -> mat R C -> mat (s R) C.
+
+mat-vec-mul : {R:nat} {C:nat} mat R C -> vec C -> vec R -> type.
+mat-vec-mul/nil : mat-vec-mul z C mat/nil V vec/nil.
+mat-vec-mul/cons : mat-vec-mul (s R) C (mat/cons Row Rest) V (vec/cons D Ds)
+                    <- vec-dot C Row V D
+                    <- mat-vec-mul R C Rest V Ds.
+
+%mode mat-vec-mul +R +C +M +V -V'.
+%worlds () (mat-vec-mul _ _ _ _ _).
+%total R (mat-vec-mul R _ _ _ _).
+
+mat-vec-mul-unique : mat-vec-mul R C M V V1 -> mat-vec-mul R C M V V2 -> vec-id R V1 V2 -> type.
+%mode mat-vec-mul-unique +D1 +D2 -Eid.
+mat-vec-mul-unique/nil : mat-vec-mul-unique mat-vec-mul/nil mat-vec-mul/nil (vec-id/refl).
+mat-vec-mul-unique/cons : mat-vec-mul-unique
+                           (mat-vec-mul/cons Dm1 Dd1)
+                           (mat-vec-mul/cons Dm2 Dd2)
+                           Eid
+                           <- vec-dot-unique Dd1 Dd2 (nat-id/refl : nat-id D D)
+                           <- mat-vec-mul-unique Dm1 Dm2 (vec-id/refl : vec-id R Ds Ds)
+                           .
+%worlds () (mat-vec-mul-unique _ _ _).
+%total D1 (mat-vec-mul-unique D1 _ _).
+
+mat-vec-mul-total : {R:nat} {C:nat} {M : mat R C} {V : vec C} mat-vec-mul R C M V V' -> type.
+%mode mat-vec-mul-total +R +C +M +V -D.
+mat-vec-mul-total/nil : mat-vec-mul-total z C mat/nil V mat-vec-mul/nil.
+mat-vec-mul-total/cons : mat-vec-mul-total (s R) C (mat/cons Row Rest) V (mat-vec-mul/cons Dm Dd)
+                          <- vec-dot N Row V _
+                          <- mat-vec-mul-total R C Rest V Dm.
+%worlds () (mat-vec-mul-total _ _ _ _ _).
+
+dim : type.
+mkdim : nat -> dim.
+
+dim-pos : dim -> type.
+dim-pos/i : dim-pos (mkdim (s N)).
+
+batch : type.
+mkbatch : nat -> batch.
+
+batch-pos : batch -> type.
+batch-pos/i : batch-pos (mkbatch (s N)).
+
+clip-range : type.
+mkclip : nat -> nat -> clip-range.
+
+clip-valid : clip-range -> type.
+clip-valid/i : clip-valid (mkclip Lo Hi) <- lt Lo Hi.
+
+clip-apply : clip-range -> nat -> nat -> type.
+clip-apply/below : clip-apply (mkclip Lo Hi) V Lo <- lt V Lo.
+clip-apply/in-range : clip-apply (mkclip Lo Hi) V V <- leq Lo V <- leq V Hi.
+clip-apply/above : clip-apply (mkclip Lo Hi) V Hi <- lt Hi V.
+
+clip-apply-det : clip-apply CR V R1 -> clip-apply CR V R2 -> nat-id R1 R2 -> type.
+%mode clip-apply-det +D1 +D2 -Eid.
+clip-apply-det/bb : clip-apply-det (clip-apply/below _) (clip-apply/below _) nat-id/refl.
+clip-apply-det/ii : clip-apply-det (clip-apply/in-range _ _) (clip-apply/in-range _ _) nat-id/refl.
+clip-apply-det/aa : clip-apply-det (clip-apply/above _) (clip-apply/above _) nat-id/refl.
+%worlds () (clip-apply-det _ _ _).
+%total D1 (clip-apply-det D1 _ _).
+
+clip-bounded-lo : clip-apply (mkclip Lo Hi) V R -> leq Lo R -> type.
+%mode clip-bounded-lo +D -Dl.
+clip-bounded-lo/below : clip-bounded-lo (clip-apply/below _) Dl <- leq-refl _ Dl.
+clip-bounded-lo/in : clip-bounded-lo (clip-apply/in-range _ Dlo) Dlo.
+clip-bounded-lo/above : clip-bounded-lo (clip-apply/above Dlt) Dl <- lt-leq Dlt Dl.
+%worlds () (clip-bounded-lo _ _).
+%total D (clip-bounded-lo D _).
+
+clip-bounded-hi : clip-apply (mkclip Lo Hi) V R -> leq R Hi -> type.
+%mode clip-bounded-hi +D -Dl.
+clip-bounded-hi/below : clip-bounded-hi (clip-apply/below Dlt) Dl
+                         <- lt-leq Dlt Dl'
+                         <- leq-trans Dl' Dlhi
+                         .
+clip-bounded-hi/in : clip-bounded-hi (clip-apply/in-range Dhi _) Dhi.
+clip-bounded-hi/above : clip-bounded-hi (clip-apply/above _) Dl <- leq-refl _ Dl.
+%worlds () (clip-bounded-hi _ _).
+
+vec-clip : {N:nat} clip-range -> vec N -> vec N -> type.
+vec-clip/nil : vec-clip z CR vec/nil vec/nil.
+vec-clip/cons : vec-clip (s N) CR (vec/cons V Vs) (vec/cons R Rs)
+                 <- clip-apply CR V R
+                 <- vec-clip N CR Vs Rs.
+
+%mode vec-clip +N +CR +V -V'.
+%worlds () (vec-clip _ _ _ _).
+%total N (vec-clip N _ _ _).
+
+vec-clip-det : vec-clip N CR V R1 -> vec-clip N CR V R2 -> vec-id N R1 R2 -> type.
+%mode vec-clip-det +D1 +D2 -Eid.
+vec-clip-det/nil : vec-clip-det vec-clip/nil vec-clip/nil (vec-id/refl).
+vec-clip-det/cons : vec-clip-det (vec-clip/cons Dvc1 Dca1) (vec-clip/cons Dvc2 Dca2) Eid
+                     <- clip-apply-det Dca1 Dca2 (nat-id/refl : nat-id R R)
+                     <- vec-clip-det Dvc1 Dvc2 (vec-id/refl : vec-id N Rs Rs)
+                     .
+%worlds () (vec-clip-det _ _ _).
+%total D1 (vec-clip-det D1 _ _).
+
+exp-approx : nat -> nat -> type.
+exp-approx/z : exp-approx z (s z).
+exp-approx/s : exp-approx (s N) (s (s R)) <- exp-approx N R.
+
+exp-approx-pos : exp-approx N R -> lt z R -> type.
+%mode exp-approx-pos +D -Dl.
+exp-approx-pos/z : exp-approx-pos exp-approx/z lt/z.
+exp-approx-pos/s : exp-approx-pos (exp-approx/s _) lt/z.
+%worlds () (exp-approx-pos _ _).
+%total D (exp-approx-pos D _).
+
+exp-approx-det : exp-approx N R1 -> exp-approx N R2 -> nat-id R1 R2 -> type.
+%mode exp-approx-det +D1 +D2 -Eid.
+exp-approx-det/z : exp-approx-det exp-approx/z exp-approx/z nat-id/refl.
+exp-approx-det/s : exp-approx-det (exp-approx/s D1) (exp-approx/s D2) nat-id/refl
+                    <- exp-approx-det D1 D2 nat-id/refl.
+%worlds () (exp-approx-det _ _ _).
+%total D1 (exp-approx-det D1 _ _).
+
+exp-approx-total : {N:nat} exp-approx N R -> type.
+%mode exp-approx-total +N -D.
+exp-approx-total/z : exp-approx-total z exp-approx/z.
+exp-approx-total/s : exp-approx-total (s N) (exp-approx/s D) <- exp-approx-total N D.
+%worlds () (exp-approx-total _ _).
+%total N (exp-approx-total N _).
+
+vec-exp : {N:nat} vec N -> vec N -> type.
+vec-exp/nil : vec-exp z vec/nil vec/nil.
+vec-exp/cons : vec-exp (s N) (vec/cons V Vs) (vec/cons R Rs)
+                <- exp-approx V R
+                <- vec-exp N Vs Rs.
+
+%mode vec-exp +N +V -V'.
+%worlds () (vec-exp _ _ _).
+%total N (vec-exp N _ _).
+
+vec-exp-det : vec-exp N V R1 -> vec-exp N V R2 -> vec-id N R1 R2 -> type.
+%mode vec-exp-det +D1 +D2 -Eid.
+vec-exp-det/nil : vec-exp-det vec-exp/nil vec-exp/nil (vec-id/refl).
+vec-exp-det/cons : vec-exp-det (vec-exp/cons Dve1 De1) (vec-exp/cons Dve2 De2) Eid
+                    <- exp-approx-det De1 De2 (nat-id/refl : nat-id R R)
+                    <- vec-exp-det Dve1 Dve2 (vec-id/refl : vec-id N Rs Rs)
+                    .
+%worlds () (vec-exp-det _ _ _).
+%total D1 (vec-exp-det D1 _ _).
+
+vec-exp-pos-elem : vec-exp (s N) (vec/cons V Vs) (vec/cons R Rs) -> lt z R -> type.
+%mode vec-exp-pos-elem +D -Dl.
+vec-exp-pos-elem/i : vec-exp-pos-elem (vec-exp/cons _ De) Dl <- exp-approx-pos De Dl.
+%worlds () (vec-exp-pos-elem _ _).
+%total D (vec-exp-pos-elem D _).
+
+div-exact : nat -> nat -> nat -> type.
+div-exact/i : div-exact P S Q <- times Q S P.
+
+div-exact-unique : div-exact P S Q1 -> div-exact P S Q2 -> nat-id Q1 Q2 -> type.
+%mode div-exact-unique +D1 +D2 -Eid.
+%worlds () (div-exact-unique _ _ _).
+
+div-times-cancel : times Q S P -> div-exact P S Q -> type.
+%mode div-times-cancel +Dt -Dd.
+div-times-cancel/i : div-times-cancel Dt (div-exact/i Dt).
+%worlds () (div-times-cancel _ _).
+%total D (div-times-cancel D _).
+
+vec-div-exact : {N:nat} vec N -> vec N -> vec N -> type.
+vec-div-exact/nil : vec-div-exact z vec/nil vec/nil vec/nil.
+vec-div-exact/cons : vec-div-exact (s N) (vec/cons P Ps) (vec/cons S Ss) (vec/cons Q Qs)
+                      <- div-exact P S Q
+                      <- vec-div-exact N Ps Ss Qs.
+
+%mode vec-div-exact +N +VP +VS -VQ.
+%worlds () (vec-div-exact _ _ _ _).
+
+vec-mul-div-cancel : vec-mul N Q S P -> vec-div-exact N P S Q -> type.
+%mode vec-mul-div-cancel +Dm -Dd.
+vec-mul-div-cancel/nil : vec-mul-div-cancel vec-mul/nil vec-div-exact/nil.
+vec-mul-div-cancel/cons : vec-mul-div-cancel (vec-mul/cons Dvm Dt) (vec-div-exact/cons Dvd Dde)
+                           <- div-times-cancel Dt Dde
+                           <- vec-mul-div-cancel Dvm Dvd.
+%worlds () (vec-mul-div-cancel _ _).
+%total Dm (vec-mul-div-cancel Dm _).
+
+compute-scale : {D:nat} mat D D -> vec D -> vec D -> clip-range -> vec D -> type.
+compute-scale/i : compute-scale D SW X2 Bias CR Scale
+                   <- mat-vec-mul D D SW X2 PreAct
+                   <- vec-add D PreAct Bias PostBias
+                   <- vec-clip D CR PostBias Clipped
+                   <- vec-exp D Clipped Scale.
+
+%mode compute-scale +D +SW +X2 +Bias +CR -Scale.
+%worlds () (compute-scale _ _ _ _ _ _).
+
+compute-scale-det : compute-scale D SW X2 Bias CR S1 -> compute-scale D SW X2 Bias CR S2 -> vec-id D S1 S2 -> type.
+%mode compute-scale-det +D1 +D2 -Eid.
+compute-scale-det/i : compute-scale-det
+                       (compute-scale/i Dve1 Dvc1 Dva1 Dvm1)
+                       (compute-scale/i Dve2 Dvc2 Dva2 Dvm2)
+                       Eid
+                       <- mat-vec-mul-unique Dvm1 Dvm2 (vec-id/refl : vec-id D PA PA)
+                       <- vec-add-unique Dva1 Dva2 (vec-id/refl : vec-id D PB PB)
+                       <- vec-clip-det Dvc1 Dvc2 (vec-id/refl : vec-id D CL CL)
+                       <- vec-exp-det Dve1 Dve2 Eid.
+%worlds () (compute-scale-det _ _ _).
+%total D1 (compute-scale-det D1 _ _).
+
+compute-trans : {D:nat} mat D D -> vec D -> vec D -> vec D -> type.
+compute-trans/i : compute-trans D TW Input TBias Trans
+                   <- mat-vec-mul D D TW Input PreAct
+                   <- vec-add D PreAct TBias Trans.
+
+%mode compute-trans +D +TW +Input +TBias -Trans.
+%worlds () (compute-trans _ _ _ _ _).
+
+compute-trans-det : compute-trans D TW Input TBias T1 -> compute-trans D TW Input TBias T2 -> vec-id D T1 T2 -> type.
+%mode compute-trans-det +D1 +D2 -Eid.
+compute-trans-det/i : compute-trans-det
+                       (compute-trans/i Dva1 Dvm1)
+                       (compute-trans/i Dva2 Dvm2)
+                       Eid
+                       <- mat-vec-mul-unique Dvm1 Dvm2 (vec-id/refl : vec-id D PA PA)
+                       <- vec-add-unique Dva1 Dva2 Eid.
+%worlds () (compute-trans-det _ _ _).
+%total D1 (compute-trans-det D1 _ _).
+
+layer-weights : type.
+mk-lw : {D:nat} mat D D -> mat D D -> vec D -> vec D -> clip-range -> layer-weights.
+
+lw-dim : layer-weights -> nat -> type.
+lw-dim/i : lw-dim (mk-lw D SW TW SB TB CR) D.
+
+lw-sw : layer-weights -> {D:nat} mat D D -> type.
+lw-sw/i : lw-sw (mk-lw D SW TW SB TB CR) D SW.
+
+lw-tw : layer-weights -> {D:nat} mat D D -> type.
+lw-tw/i : lw-tw (mk-lw D SW TW SB TB CR) D TW.
+
+lw-sb : layer-weights -> {D:nat} vec D -> type.
+lw-sb/i : lw-sb (mk-lw D SW TW SB TB CR) D SB.
+
+lw-tb : layer-weights -> {D:nat} vec D -> type.
+lw-tb/i : lw-tb (mk-lw D SW TW SB TB CR) D TB.
+
+lw-cr : layer-weights -> clip-range -> type.
+lw-cr/i : lw-cr (mk-lw D SW TW SB TB CR) CR.
+
+lw-wf : layer-weights -> type.
+lw-wf/i : lw-wf (mk-lw (s D) SW TW SB TB CR) <- clip-valid CR.
+
+coupling-forward : layer-weights -> {D:nat} vec D -> vec D -> vec D -> vec D -> type.
+coupling-forward/step : coupling-forward (mk-lw D SW TW SB TB CR) D X1 X2 Y1 Y2
+                          <- compute-scale D SW X2 SB CR Scale
+                          <- vec-mul D X1 Scale Y1
+                          <- compute-trans D TW Y1 TB Trans
+                          <- vec-add D X2 Trans Y2.
+
+%mode coupling-forward +LW +D +X1 +X2 -Y1 -Y2.
+%worlds () (coupling-forward _ _ _ _ _ _).
+
+coupling-forward-det : coupling-forward LW D X1 X2 Y1a Y2a ->
+                        coupling-forward LW D X1 X2 Y1b Y2b ->
+                        vec-id D Y1a Y1b -> vec-id D Y2a Y2b -> type.
+%mode coupling-forward-det +D1 +D2 -Eid1 -Eid2.
+coupling-forward-det/i : coupling-forward-det
+                          (coupling-forward/step Dva1 Dct1 Dvm1 Dcs1)
+                          (coupling-forward/step Dva2 Dct2 Dvm2 Dcs2)
+                          Eid1 Eid2
+                          <- compute-scale-det Dcs1 Dcs2 (vec-id/refl : vec-id D Scale Scale)
+                          <- vec-mul-unique Dvm1 Dvm2 Eid1
+                          <- compute-trans-det Dct1 Dct2 (vec-id/refl : vec-id D Trans Trans)
+                          <- vec-add-unique Dva1 Dva2 Eid2.
+%worlds () (coupling-forward-det _ _ _ _).
+%total D1 (coupling-forward-det D1 _ _ _).
+
+coupling-inverse : layer-weights -> {D:nat} vec D -> vec D -> vec D -> vec D -> type.
+coupling-inverse/step : coupling-inverse (mk-lw D SW TW SB TB CR) D Y1 Y2 X1 X2
+                          <- compute-trans D TW Y1 TB Trans
+                          <- vec-sub D Y2 Trans X2
+                          <- compute-scale D SW X2 SB CR Scale
+                          <- vec-div-exact D Y1 Scale X1.
+
+%mode coupling-inverse +LW +D +Y1 +Y2 -X1 -X2.
+%worlds () (coupling-inverse _ _ _ _ _ _).
+
+coupling-fwd-to-inv-trans : coupling-forward LW D X1 X2 Y1 Y2 ->
+                             compute-trans D TW Y1 TB Trans ->
+                             vec-sub D Y2 Trans X2rec ->
+                             vec-id D X2 X2rec ->
+                             type.
+%mode coupling-fwd-to-inv-trans +Dfwd +Dct +Dsub -Eid.
+coupling-fwd-to-inv-trans/i : coupling-fwd-to-inv-trans
+                               (coupling-forward/step Dva Dct_fwd Dvm Dcs)
+                               Dct_inv Dsub Eid
+                               <- compute-trans-det Dct_fwd Dct_inv (vec-id/refl : vec-id D Trans Trans)
+                               <- vec-add-sub-cancel Dva Dsub_correct
+                               <- vec-sub-unique Dsub_correct Dsub Eid.
+%worlds () (coupling-fwd-to-inv-trans _ _ _ _).
+%total D (coupling-fwd-to-inv-trans D _ _ _).
+
+coupling-fwd-to-inv-scale : coupling-forward LW D X1 X2 Y1 Y2 ->
+                              vec-id D X2 X2rec ->
+                              compute-scale D SW X2rec SB CR Scalerec ->
+                              compute-scale D SW X2 SB CR Scaleorig ->
+                              vec-id D Scaleorig Scalerec ->
+                              type.
+%mode coupling-fwd-to-inv-scale +Dfwd +Eidx2 +Dcsrec +Dcsorig -Eids.
+coupling-fwd-to-inv-scale/refl : coupling-fwd-to-inv-scale Dfwd (vec-id/refl) Dcsrec Dcsorig Eids
+                                  <- compute-scale-det Dcsorig Dcsrec Eids.
+%worlds () (coupling-fwd-to-inv-scale _ _ _ _ _).
+%total D (coupling-fwd-to-inv-scale D _ _ _ _).
+
+coupling-fwd-inv-mul-cancel : vec-mul D X1 Scale Y1 -> vec-div-exact D Y1 Scale X1rec -> vec-id D X1 X1rec -> type.
+%mode coupling-fwd-inv-mul-cancel +Dm +Dd -Eid.
+coupling-fwd-inv-mul-cancel/i : coupling-fwd-inv-mul-cancel Dm (div-exact/i Dt) Eid
+                                 <- times-unique Dt Dm_comm Eid.
+%worlds () (coupling-fwd-inv-mul-cancel _ _ _).
+
+coupling-invertibility :
+  coupling-forward (mk-lw D SW TW SB TB CR) D X1 X2 Y1 Y2 ->
+  coupling-inverse (mk-lw D SW TW SB TB CR) D Y1 Y2 X1rec X2rec ->
+  compute-trans D TW Y1 TB Trans_fwd ->
+  compute-trans D TW Y1 TB Trans_inv ->
+  vec-id D Trans_fwd Trans_inv ->
+  vec-sub D Y2 Trans_inv X2rec ->
+  vec-id D X2 X2rec ->
+  type.
+%mode coupling-invertibility +Dfwd +Dinv +Dctf +Dcti +Eidt +Dsub -Eidx2.
+coupling-invertibility/i : coupling-invertibility
+                            (coupling-forward/step Dva Dct_fwd Dvm Dcs)
+                            Dinv Dctf Dcti Eidt Dsub Eidx2
+                            <- compute-trans-det Dct_fwd Dcti (vec-id/refl : vec-id D T T)
+                            <- vec-add-sub-cancel Dva Dsub_correct
+                            <- vec-sub-unique Dsub_correct Dsub Eidx2.
+%worlds () (coupling-invertibility _ _ _ _ _ _ _).
+%total D (coupling-invertibility D _ _ _ _ _ _).
+
+layer-seq : type.
+lseq-nil : layer-seq.
+lseq-cons : layer-weights -> layer-seq -> layer-seq.
+
+lseq-len : layer-seq -> nat -> type.
+lseq-len/nil : lseq-len lseq-nil z.
+lseq-len/cons : lseq-len (lseq-cons LW LS) (s N) <- lseq-len LS N.
+
+%mode lseq-len +LS -N.
+%worlds () (lseq-len _ _).
+%total LS (lseq-len LS _).
+
+lseq-all-wf : layer-seq -> type.
+lseq-all-wf/nil : lseq-all-wf lseq-nil.
+lseq-all-wf/cons : lseq-all-wf (lseq-cons LW LS) <- lw-wf LW <- lseq-all-wf LS.
+
+lseq-all-dim : layer-seq -> nat -> type.
+lseq-all-dim/nil : lseq-all-dim lseq-nil D.
+lseq-all-dim/cons : lseq-all-dim (lseq-cons LW LS) D <- lw-dim LW D <- lseq-all-dim LS D.
+
+multi-forward : layer-seq -> {D:nat} vec D -> vec D -> vec D -> vec D -> type.
+multi-forward/nil : multi-forward lseq-nil D X1 X2 X1 X2.
+multi-forward/cons : multi-forward (lseq-cons LW Rest) D X1 X2 Y1 Y2
+                      <- coupling-forward LW D X1 X2 M1 M2
+                      <- multi-forward Rest D M1 M2 Y1 Y2.
+
+%mode multi-forward +LS +D +X1 +X2 -Y1 -Y2.
+%worlds () (multi-forward _ _ _ _ _ _).
+
+multi-inverse : layer-seq -> {D:nat} vec D -> vec D -> vec D -> vec D -> type.
+multi-inverse/nil : multi-inverse lseq-nil D Y1 Y2 Y1 Y2.
+multi-inverse/cons : multi-inverse (lseq-cons LW Rest) D Y1 Y2 X1 X2
+                      <- multi-inverse Rest D Y1 Y2 M1 M2
+                      <- coupling-inverse LW D M1 M2 X1 X2.
+
+%mode multi-inverse +LS +D +Y1 +Y2 -X1 -X2.
+%worlds () (multi-inverse _ _ _ _ _ _).
+
+multi-forward-det : multi-forward LS D X1 X2 Y1a Y2a ->
+                     multi-forward LS D X1 X2 Y1b Y2b ->
+                     vec-id D Y1a Y1b -> vec-id D Y2a Y2b -> type.
+%mode multi-forward-det +D1 +D2 -Eid1 -Eid2.
+multi-forward-det/nil : multi-forward-det multi-forward/nil multi-forward/nil (vec-id/refl) (vec-id/refl).
+multi-forward-det/cons : multi-forward-det
+                          (multi-forward/cons Dmf1 Dcf1)
+                          (multi-forward/cons Dmf2 Dcf2)
+                          Eid1 Eid2
+                          <- coupling-forward-det Dcf1 Dcf2
+                              (vec-id/refl : vec-id D M1 M1)
+                              (vec-id/refl : vec-id D M2 M2)
+                          <- multi-forward-det Dmf1 Dmf2 Eid1 Eid2.
+%worlds () (multi-forward-det _ _ _ _).
+%total D1 (multi-forward-det D1 _ _ _).
+
+fwd-inv-additive-step : vec-add D X2 T Y2 -> vec-sub D Y2 T X2rec -> vec-id D X2 X2rec -> type.
+%mode fwd-inv-additive-step +Da +Ds -Eid.
+fwd-inv-additive-step/i : fwd-inv-additive-step Da Ds Eid
+                            <- vec-add-sub-cancel Da Ds_correct
+                            <- vec-sub-unique Ds_correct Ds Eid.
+%worlds () (fwd-inv-additive-step _ _ _).
+%total D (fwd-inv-additive-step D _ _).
+
+inv-fwd-additive-step : vec-sub D Y2 T X2 -> vec-add D X2 T Y2rec -> vec-id D Y2 Y2rec -> type.
+%mode inv-fwd-additive-step +Ds +Da -Eid.
+inv-fwd-additive-step/i : inv-fwd-additive-step Ds Da Eid
+                            <- vec-sub-add-cancel Ds Da_correct
+                            <- vec-add-unique Da_correct Da Eid.
+%worlds () (inv-fwd-additive-step _ _ _).
+%total D (inv-fwd-additive-step D _ _).
+
+shape2d : type.
+mkshape : nat -> nat -> shape2d.
+
+shape-id : shape2d -> shape2d -> type.
+shape-id/refl : shape-id S S.
+
+shape-valid : shape2d -> type.
+shape-valid/i : shape-valid (mkshape R C) <- times R C Sz.
+
+tensor-ref : type.
+mkref : nat -> shape2d -> tensor-ref.
+
+ref-shape : tensor-ref -> shape2d -> type.
+ref-shape/i : ref-shape (mkref I S) S.
+
+noalias : tensor-ref -> tensor-ref -> type.
+noalias/lt : noalias (mkref I1 S1) (mkref I2 S2) <- lt I1 I2.
+noalias/gt : noalias (mkref I1 S1) (mkref I2 S2) <- lt I2 I1.
+
+noalias-sym : noalias R1 R2 -> noalias R2 R1 -> type.
+%mode noalias-sym +D1 -D2.
+noalias-sym/lr : noalias-sym (noalias/lt D) (noalias/gt D).
+noalias-sym/rl : noalias-sym (noalias/gt D) (noalias/lt D).
+%worlds () (noalias-sym _ _).
+%total D (noalias-sym D _).
+
+heap : type.
+hempty : heap.
+halloc : tensor-ref -> heap -> heap.
+
+heap-contains : heap -> tensor-ref -> type.
+heap-contains/here : heap-contains (halloc R H) R.
+heap-contains/there : heap-contains (halloc R' H) R <- heap-contains H R.
+
+heap-extends : heap -> heap -> type.
+heap-extends/refl : heap-extends H H.
+heap-extends/step : heap-extends H1 (halloc R H2) <- heap-extends H1 H2.
+
+heap-extends-trans : heap-extends H1 H2 -> heap-extends H2 H3 -> heap-extends H1 H3 -> type.
+%mode heap-extends-trans +D1 +D2 -D3.
+heap-extends-trans/refl : heap-extends-trans heap-extends/refl D D.
+heap-extends-trans/step : heap-extends-trans D1 (heap-extends/step D2) (heap-extends/step D3)
+                           <- heap-extends-trans D1 D2 D3.
+%worlds () (heap-extends-trans _ _ _).
+%total D2 (heap-extends-trans _ D2 _).
+
+heap-contains-extends : heap-contains H1 R -> heap-extends H1 H2 -> heap-contains H2 R -> type.
+%mode heap-contains-extends +Dc +De -Dc2.
+heap-contains-extends/refl : heap-contains-extends Dc heap-extends/refl Dc.
+heap-contains-extends/step : heap-contains-extends Dc (heap-extends/step De) (heap-contains/there Dc2)
+                              <- heap-contains-extends Dc De Dc2.
+%worlds () (heap-contains-extends _ _ _).
+%total De (heap-contains-extends _ De _).
+
+mem-state : type.
+mkmem : heap -> nat -> mem-state.
+
+mem-heap : mem-state -> heap -> type.
+mem-heap/i : mem-heap (mkmem H N) H.
+
+mem-next : mem-state -> nat -> type.
+mem-next/i : mem-next (mkmem H N) N.
+
+mem-alloc : mem-state -> shape2d -> tensor-ref -> mem-state -> type.
+mem-alloc/i : mem-alloc (mkmem H N) S (mkref N S) (mkmem (halloc (mkref N S) H) (s N)).
+
+%mode mem-alloc +M +S -R -M2.
+%worlds () (mem-alloc _ _ _ _).
+%total M (mem-alloc M _ _ _).
+
+mem-alloc-extends : mem-alloc M1 S R M2 -> mem-heap M1 H1 -> mem-heap M2 H2 -> heap-extends H1 H2 -> type.
+%mode mem-alloc-extends +Ma +Mh1 -Mh2 -He.
+mem-alloc-extends/i : mem-alloc-extends mem-alloc/i mem-heap/i mem-heap/i (heap-extends/step heap-extends/refl).
+%worlds () (mem-alloc-extends _ _ _ _).
+%total Ma (mem-alloc-extends Ma _ _ _).
+
+mem-alloc-contains : mem-alloc M1 S R M2 -> mem-heap M2 H2 -> heap-contains H2 R -> type.
+%mode mem-alloc-contains +Ma +Mh -Hc.
+mem-alloc-contains/i : mem-alloc-contains mem-alloc/i mem-heap/i heap-contains/here.
+%worlds () (mem-alloc-contains _ _ _).
+%total Ma (mem-alloc-contains Ma _ _).
+
+mem-alloc-preserves : mem-alloc M1 S R M2 -> mem-heap M1 H1 -> heap-contains H1 R' -> mem-heap M2 H2 -> heap-contains H2 R' -> type.
+%mode mem-alloc-preserves +Ma +Mh1 +Hc1 -Mh2 -Hc2.
+mem-alloc-preserves/i : mem-alloc-preserves mem-alloc/i mem-heap/i Hc mem-heap/i (heap-contains/there Hc).
+%worlds () (mem-alloc-preserves _ _ _ _ _).
+%total Ma (mem-alloc-preserves Ma _ _ _ _).
+
+mem-alloc-noalias : mem-alloc M1 S1 R1 M2 -> mem-alloc M2 S2 R2 M3 -> noalias R1 R2 -> type.
+%mode mem-alloc-noalias +Ma1 +Ma2 -Na.
+mem-alloc-noalias/i : mem-alloc-noalias
+                       (mem-alloc/i : mem-alloc (mkmem H N) _ (mkref N _) _)
+                       (mem-alloc/i : mem-alloc (mkmem _ (s N)) _ (mkref (s N) _) _)
+                       (noalias/lt Dlt)
+                       <- lt-succ N Dlt.
+%worlds () (mem-alloc-noalias _ _ _).
+%total Ma1 (mem-alloc-noalias Ma1 _ _).
+
+tensor-data-safe : tensor-ref -> mem-state -> type.
+tensor-data-safe/i : tensor-data-safe R M <- mem-heap M H <- heap-contains H R.
+
+alloc-safe : mem-alloc M1 S R M2 -> tensor-data-safe R M2 -> type.
+%mode alloc-safe +Ma -Tds.
+alloc-safe/i : alloc-safe mem-alloc/i (tensor-data-safe/i heap-contains/here mem-heap/i).
+%worlds () (alloc-safe _ _).
+%total Ma (alloc-safe Ma _).
+
+safe-monotone : tensor-data-safe R M1 -> mem-heap M1 H1 -> heap-extends H1 H2 -> mem-heap M2 H2 -> tensor-data-safe R M2 -> type.
+%mode safe-monotone +Tds +Mh1 +He +Mh2 -Tds2.
+safe-monotone/i : safe-monotone (tensor-data-safe/i Hc Mh) Mh He Mh2 (tensor-data-safe/i Hc2 Mh2)
+                   <- heap-contains-extends Hc He Hc2.
+%worlds () (safe-monotone _ _ _ _ _).
+%total Tds (safe-monotone Tds _ _ _ _).
+
+split-judgment : tensor-ref -> nat -> tensor-ref -> tensor-ref -> mem-state -> mem-state -> type.
+split-judgment/i : split-judgment (mkref TID (mkshape B D2)) D R1 R2 M1 M3
+                    <- plus D D D2
+                    <- lt z (s B')
+                    <- lt z (s D')
+                    <- mem-alloc M1 (mkshape B D) R1 M2
+                    <- mem-alloc M2 (mkshape B D) R2 M3.
+
+split-noalias : split-judgment Xin D R1 R2 M1 M3 -> noalias R1 R2 -> type.
+%mode split-noalias +Sj -Na.
+split-noalias/i : split-noalias (split-judgment/i Ma2 Ma1 _ _ _) Na
+                   <- mem-alloc-noalias Ma1 Ma2 Na.
+%worlds () (split-noalias _ _).
+%total Sj (split-noalias Sj _).
+
+split-extends : split-judgment Xin D R1 R2 M1 M3 -> mem-heap M1 H1 -> mem-heap M3 H3 -> heap-extends H1 H3 -> type.
+%mode split-extends +Sj +Mh1 -Mh3 -He.
+split-extends/i : split-extends (split-judgment/i Ma2 Ma1 _ _ _) Mh1 Mh3 He13
+                   <- mem-alloc-extends Ma1 Mh1 Mh2 He12
+                   <- mem-alloc-extends Ma2 Mh2 Mh3 He23
+                   <- heap-extends-trans He12 He23 He13.
+%worlds () (split-extends _ _ _ _).
+%total Sj (split-extends Sj _ _ _).
+
+split-safe : split-judgment Xin D R1 R2 M1 M3 -> tensor-data-safe R1 M3 -> tensor-data-safe R2 M3 -> type.
+%mode split-safe +Sj -Tds1 -Tds2.
+split-safe/i : split-safe (split-judgment/i Ma2 Ma1 _ _ _) Tds1safe Tds2safe
+                <- alloc-safe Ma2 Tds2safe
+                <- alloc-safe Ma1 Tds1unsafe
+                <- mem-alloc-extends Ma2 _ Mh3 He23
+                <- safe-monotone Tds1unsafe _ He23 Mh3 Tds1safe.
+%worlds () (split-safe _ _ _).
+
+merge-judgment : tensor-ref -> tensor-ref -> nat -> tensor-ref -> mem-state -> mem-state -> type.
+merge-judgment/i : merge-judgment R1 R2 D Rout M1 M2
+                    <- ref-shape R1 (mkshape B D)
+                    <- ref-shape R2 (mkshape B D)
+                    <- plus D D D2
+                    <- mem-alloc M1 (mkshape B D2) Rout M2.
+
+merge-extends : merge-judgment R1 R2 D Rout M1 M2 -> mem-heap M1 H1 -> mem-heap M2 H2 -> heap-extends H1 H2 -> type.
+%mode merge-extends +Mj +Mh1 -Mh2 -He.
+merge-extends/i : merge-extends (merge-judgment/i Ma Dp Rs2 Rs1) Mh1 Mh2 He
+                   <- mem-alloc-extends Ma Mh1 Mh2 He.
+%worlds () (merge-extends _ _ _ _).
+%total Mj (merge-extends Mj _ _ _).
+
+merge-safe : merge-judgment R1 R2 D Rout M1 M2 -> tensor-data-safe Rout M2 -> type.
+%mode merge-safe +Mj -Tds.
+merge-safe/i : merge-safe (merge-judgment/i Ma _ _ _) Tds <- alloc-safe Ma Tds.
+%worlds () (merge-safe _ _).
+%total Mj (merge-safe Mj _).
+
+merge-preserves-safe : merge-judgment R1 R2 D Rout M1 M2 ->
+                        tensor-data-safe R M1 ->
+                        mem-heap M1 H1 ->
+                        mem-heap M2 H2 ->
+                        tensor-data-safe R M2 -> type.
+%mode merge-preserves-safe +Mj +Tds +Mh1 -Mh2 -Tds2.
+merge-preserves-safe/i : merge-preserves-safe (merge-judgment/i Ma _ _ _) Tds Mh1 Mh2 Tds2
+                           <- mem-alloc-extends Ma Mh1 Mh2 He
+                           <- safe-monotone Tds Mh1 He Mh2 Tds2.
+%worlds () (merge-preserves-safe _ _ _ _ _).
+%total Mj (merge-preserves-safe Mj _ _ _ _).
+
+config : type.
+mkcfg : clip-range -> bool -> nat -> nat -> config.
+
+cfg-clip : config -> clip-range -> type.
+cfg-clip/i : cfg-clip (mkcfg CR GM MD ML) CR.
+
+cfg-valid : config -> type.
+cfg-valid/i : cfg-valid (mkcfg CR GM MD ML) <- clip-valid CR.
+
+model-core : type.
+mk-mcore : nat -> nat -> layer-seq -> config -> model-core.
+
+mcore-dim : model-core -> nat -> type.
+mcore-dim/i : mcore-dim (mk-mcore D NL LS C) D.
+
+mcore-nlayers : model-core -> nat -> type.
+mcore-nlayers/i : mcore-nlayers (mk-mcore D NL LS C) NL.
+
+mcore-layers : model-core -> layer-seq -> type.
+mcore-layers/i : mcore-layers (mk-mcore D NL LS C) LS.
+
+mcore-cfg : model-core -> config -> type.
+mcore-cfg/i : mcore-cfg (mk-mcore D NL LS C) C.
+
+mcore-wf : model-core -> type.
+mcore-wf/i : mcore-wf (mk-mcore (s D) (s NL) LS C)
+              <- cfg-valid C
+              <- lseq-len LS (s NL)
+              <- lseq-all-wf LS
+              <- lseq-all-dim LS (s D)
+              <- times (s D) (s D) Dsq
+              <- plus (s D) (s D) D2.
+
+mcore-wf-dim-pos : mcore-wf MC -> mcore-dim MC D -> lt z D -> type.
+%mode mcore-wf-dim-pos +Mwf +Md -Dlt.
+mcore-wf-dim-pos/i : mcore-wf-dim-pos (mcore-wf/i _ _ _ _ _ _) mcore-dim/i lt/z.
+%worlds () (mcore-wf-dim-pos _ _ _).
+%total Mwf (mcore-wf-dim-pos Mwf _ _).
+
+mcore-wf-cfg-valid : mcore-wf MC -> mcore-cfg MC C -> cfg-valid C -> type.
+%mode mcore-wf-cfg-valid +Mwf +Mc -Cv.
+mcore-wf-cfg-valid/i : mcore-wf-cfg-valid (mcore-wf/i _ _ _ _ _ Cv) mcore-cfg/i Cv.
+%worlds () (mcore-wf-cfg-valid _ _ _).
+%total Mwf (mcore-wf-cfg-valid Mwf _ _).
+
+mcore-wf-layers-len : mcore-wf (mk-mcore D NL LS C) -> lseq-len LS NL -> type.
+%mode mcore-wf-layers-len +Mwf -Lll.
+mcore-wf-layers-len/i : mcore-wf-layers-len (mcore-wf/i _ _ _ _ Lll _) Lll.
+%worlds () (mcore-wf-layers-len _ _).
+%total Mwf (mcore-wf-layers-len Mwf _).
+
+mcore-wf-all-wf : mcore-wf (mk-mcore D NL LS C) -> lseq-all-wf LS -> type.
+%mode mcore-wf-all-wf +Mwf -Law.
+mcore-wf-all-wf/i : mcore-wf-all-wf (mcore-wf/i _ _ _ Law _ _) Law.
+%worlds () (mcore-wf-all-wf _ _).
+%total Mwf (mcore-wf-all-wf Mwf _).
+
+mcore-wf-all-dim : mcore-wf (mk-mcore D NL LS C) -> lseq-all-dim LS D -> type.
+%mode mcore-wf-all-dim +Mwf -Lad.
+mcore-wf-all-dim/i : mcore-wf-all-dim (mcore-wf/i _ _ Lad _ _ _) Lad.
+%worlds () (mcore-wf-all-dim _ _).
+%total Mwf (mcore-wf-all-dim Mwf _).
+
+model-forward : model-core -> {D:nat} vec D -> vec D -> vec D -> vec D -> type.
+model-forward/i : model-forward MC D X1 X2 Y1 Y2
+                   <- mcore-wf MC
+                   <- mcore-layers MC LS
+                   <- multi-forward LS D X1 X2 Y1 Y2.
+
+model-inverse : model-core -> {D:nat} vec D -> vec D -> vec D -> vec D -> type.
+model-inverse/i : model-inverse MC D Y1 Y2 X1 X2
+                   <- mcore-wf MC
+                   <- mcore-layers MC LS
+                   <- multi-inverse LS D Y1 Y2 X1 X2.
+
+model-forward-det : model-forward MC D X1 X2 Y1a Y2a ->
+                     model-forward MC D X1 X2 Y1b Y2b ->
+                     vec-id D Y1a Y1b -> vec-id D Y2a Y2b -> type.
+%mode model-forward-det +D1 +D2 -Eid1 -Eid2.
+model-forward-det/i : model-forward-det
+                        (model-forward/i Dmf1 mcore-layers/i Mwf)
+                        (model-forward/i Dmf2 mcore-layers/i Mwf)
+                        Eid1 Eid2
+                        <- multi-forward-det Dmf1 Dmf2 Eid1 Eid2.
+%worlds () (model-forward-det _ _ _ _).
+%total D1 (model-forward-det D1 _ _ _).
+
+model-forward-preserves-dim : model-forward MC D X1 X2 Y1 Y2 ->
+                               mcore-wf MC ->
+                               mcore-dim MC D ->
+                               lt z D -> type.
+%mode model-forward-preserves-dim +Dmf +Mwf +Md -Dlt.
+model-forward-preserves-dim/i : model-forward-preserves-dim
+                                  (model-forward/i _ _ _) Mwf Md Dlt
+                                  <- mcore-wf-dim-pos Mwf Md Dlt.
+%worlds () (model-forward-preserves-dim _ _ _ _).
+%total Dmf (model-forward-preserves-dim Dmf _ _ _).
+
+model-inverse-preserves-dim : model-inverse MC D Y1 Y2 X1 X2 ->
+                               mcore-wf MC ->
+                               mcore-dim MC D ->
+                               lt z D -> type.
+%mode model-inverse-preserves-dim +Dmi +Mwf +Md -Dlt.
+model-inverse-preserves-dim/i : model-inverse-preserves-dim
+                                  (model-inverse/i _ _ _) Mwf Md Dlt
+                                  <- mcore-wf-dim-pos Mwf Md Dlt.
+%worlds () (model-inverse-preserves-dim _ _ _ _).
+%total Dmi (model-inverse-preserves-dim Dmi _ _ _).
+
+error-kind : type.
+ek-overflow : error-kind.
+ek-shape-mismatch : error-kind.
+ek-data-length : error-kind.
+ek-non-finite : error-kind.
+ek-invalid-dim : error-kind.
+ek-invalid-config : error-kind.
+ek-invalid-batch : error-kind.
+ek-aliased-buffers : error-kind.
+ek-not-init : error-kind.
+
+result : type -> type.
+ok : T -> result T.
+err : error-kind -> result T.
+
+checked-mul : nat -> nat -> result nat -> type.
+checked-mul/ok : checked-mul A B (ok C) <- times A B C.
+checked-mul/overflow : checked-mul A B (err ek-overflow).
+
+checked-add : nat -> nat -> result nat -> type.
+checked-add/ok : checked-add A B (ok C) <- plus A B C.
+checked-add/overflow : checked-add A B (err ek-overflow).
+
+validate-2d : tensor-ref -> result shape2d -> type.
+validate-2d/ok : validate-2d (mkref I (mkshape R C)) (ok (mkshape R C)) <- times R C Sz.
+validate-2d/bad : validate-2d (mkref I S) (err ek-shape-mismatch).
+
+validate-noalias : tensor-ref -> tensor-ref -> result bool -> type.
+validate-noalias/ok : validate-noalias R1 R2 (ok btrue) <- noalias R1 R2.
+validate-noalias/aliased : validate-noalias R R (err ek-aliased-buffers).
+
+grad-state : type.
+gs-none : grad-state.
+gs-alloc : tensor-ref -> grad-state.
+
+ensure-grad : grad-state -> shape2d -> mem-state -> grad-state -> mem-state -> type.
+ensure-grad/already : ensure-grad (gs-alloc R) S M (gs-alloc R) M.
+ensure-grad/alloc : ensure-grad gs-none S M1 (gs-alloc R) M2 <- mem-alloc M1 S R M2.
+
+%mode ensure-grad +Gs +S +M1 -Gs' -M2.
+%worlds () (ensure-grad _ _ _ _ _).
+%total Gs (ensure-grad Gs _ _ _ _).
+
+ensure-grad-monotone : ensure-grad Gs S M1 Gs' M2 -> mem-heap M1 H1 -> mem-heap M2 H2 -> heap-extends H1 H2 -> type.
+%mode ensure-grad-monotone +Eg +Mh1 -Mh2 -He.
+ensure-grad-monotone/already : ensure-grad-monotone ensure-grad/already Mh Mh heap-extends/refl.
+ensure-grad-monotone/alloc : ensure-grad-monotone (ensure-grad/alloc Ma) mem-heap/i mem-heap/i (heap-extends/step heap-extends/refl).
+%worlds () (ensure-grad-monotone _ _ _ _).
+%total Eg (ensure-grad-monotone Eg _ _ _).
+
+ensure-grad-safe : ensure-grad gs-none S M1 (gs-alloc R) M2 -> tensor-data-safe R M2 -> type.
+%mode ensure-grad-safe +Eg -Tds.
+ensure-grad-safe/i : ensure-grad-safe (ensure-grad/alloc Ma) Tds <- alloc-safe Ma Tds.
+%worlds () (ensure-grad-safe _ _).
+%total Eg (ensure-grad-safe Eg _).
+
+ensure-grad-preserves : ensure-grad Gs S M1 Gs' M2 -> tensor-data-safe R M1 -> tensor-data-safe R M2 -> type.
+%mode ensure-grad-preserves +Eg +Tds -Tds2.
+ensure-grad-preserves/already : ensure-grad-preserves ensure-grad/already Tds Tds.
+ensure-grad-preserves/alloc : ensure-grad-preserves (ensure-grad/alloc Ma) (tensor-data-safe/i Hc mem-heap/i) (tensor-data-safe/i (heap-contains/there Hc) mem-heap/i).
+%worlds () (ensure-grad-preserves _ _ _).
+%total Eg (ensure-grad-preserves Eg _ _).
+
+layer-grads : type.
+mk-lgrads : grad-state -> grad-state -> grad-state -> grad-state -> layer-grads.
+
+ensure-all-grads : layer-grads -> nat -> mem-state -> layer-grads -> mem-state -> type.
+ensure-all-grads/i : ensure-all-grads (mk-lgrads SWG TWG SBG TBG) D M1 (mk-lgrads SWG' TWG' SBG' TBG') M5
+                      <- ensure-grad SWG (mkshape D D) M1 SWG' M2
+                      <- ensure-grad TWG (mkshape D D) M2 TWG' M3
+                      <- ensure-grad SBG (mkshape (s z) D) M3 SBG' M4
+                      <- ensure-grad TBG (mkshape (s z) D) M4 TBG' M5.
+
+%mode ensure-all-grads +LG +D +M1 -LG' -M2.
+%worlds () (ensure-all-grads _ _ _ _ _).
+%total LG (ensure-all-grads LG _ _ _ _).
+
+ensure-all-grads-monotone : ensure-all-grads LG D M1 LG' M2 ->
+                             mem-heap M1 H1 -> mem-heap M2 H2 ->
+                             heap-extends H1 H2 -> type.
+%mode ensure-all-grads-monotone +Eag +Mh1 -Mh2 -He.
+ensure-all-grads-monotone/i : ensure-all-grads-monotone
+                               (ensure-all-grads/i Eg4 Eg3 Eg2 Eg1) Mh1 Mh5 He15
+                               <- ensure-grad-monotone Eg1 Mh1 Mh2 He12
+                               <- ensure-grad-monotone Eg2 Mh2 Mh3 He23
+                               <- ensure-grad-monotone Eg3 Mh3 Mh4 He34
+                               <- ensure-grad-monotone Eg4 Mh4 Mh5 He45
+                               <- heap-extends-trans He12 He23 He13
+                               <- heap-extends-trans He13 He34 He14
+                               <- heap-extends-trans He14 He45 He15.
+%worlds () (ensure-all-grads-monotone _ _ _ _).
+%total Eag (ensure-all-grads-monotone Eag _ _ _).
+
+zero-grad-op : grad-state -> type.
+zero-grad-op/none : zero-grad-op gs-none.
+zero-grad-op/alloc : zero-grad-op (gs-alloc R).
+
+zero-all-grads : layer-grads -> type.
+zero-all-grads/i : zero-all-grads (mk-lgrads SWG TWG SBG TBG)
+                    <- zero-grad-op SWG
+                    <- zero-grad-op TWG
+                    <- zero-grad-op SBG
+                    <- zero-grad-op TBG.
+
+zero-grad-total : {G:grad-state} zero-grad-op G -> type.
+%mode zero-grad-total +G -D.
+zero-grad-total/none : zero-grad-total gs-none zero-grad-op/none.
+zero-grad-total/alloc : zero-grad-total (gs-alloc _) zero-grad-op/alloc.
+%worlds () (zero-grad-total _ _).
+%total G (zero-grad-total G _).
+
+grad-snapshot : type.
+mk-gsnap : bool -> bool -> bool -> bool -> grad-snapshot.
+
+capture-grad-snapshot : layer-grads -> grad-snapshot -> type.
+capture-grad-snapshot/i : capture-grad-snapshot (mk-lgrads SWG TWG SBG TBG) (mk-gsnap B1 B2 B3 B4)
+                           <- gs-to-bool SWG B1
+                           <- gs-to-bool TWG B2
+                           <- gs-to-bool SBG B3
+                           <- gs-to-bool TBG B4.
+
+gs-to-bool : grad-state -> bool -> type.
+gs-to-bool/none : gs-to-bool gs-none bfalse.
+gs-to-bool/alloc : gs-to-bool (gs-alloc _) btrue.
+
+%mode gs-to-bool +G -B.
+%worlds () (gs-to-bool _ _).
+%total G (gs-to-bool G _).
+
+%mode capture-grad-snapshot +LG -GS.
+%worlds () (capture-grad-snapshot _ _).
+%total LG (capture-grad-snapshot LG _).
+
+snapshot-list : type.
+snil : snapshot-list.
+scons : grad-snapshot -> snapshot-list -> snapshot-list.
+
+slist-len : snapshot-list -> nat -> type.
+slist-len/nil : slist-len snil z.
+slist-len/cons : slist-len (scons S SL) (s N) <- slist-len SL N.
+
+%mode slist-len +SL -N.
+%worlds () (slist-len _ _).
+%total SL (slist-len SL _).
+
+restore-grad-from-snap : grad-snapshot -> layer-grads -> layer-grads -> type.
+restore-grad-from-snap/i : restore-grad-from-snap (mk-gsnap B1 B2 B3 B4) (mk-lgrads SWG TWG SBG TBG) (mk-lgrads SWG' TWG' SBG' TBG')
+                            <- restore-one-grad B1 SWG SWG'
+                            <- restore-one-grad B2 TWG TWG'
+                            <- restore-one-grad B3 SBG SBG'
+                            <- restore-one-grad B4 TBG TBG'.
+
+restore-one-grad : bool -> grad-state -> grad-state -> type.
+restore-one-grad/had-none : restore-one-grad bfalse _ gs-none.
+restore-one-grad/had-alloc : restore-one-grad btrue G G.
+
+%mode restore-one-grad +B +G -G'.
+%worlds () (restore-one-grad _ _ _).
+%total B (restore-one-grad B _ _).
+
+%mode restore-grad-from-snap +GS +LG -LG'.
+%worlds () (restore-grad-from-snap _ _ _).
+%total GS (restore-grad-from-snap GS _ _).
+
+backward-layer-step : layer-weights -> {D:nat} vec D -> vec D ->
+                       vec D -> vec D -> vec D -> vec D ->
+                       vec D -> vec D -> type.
+backward-layer-step/i : backward-layer-step (mk-lw D SW TW SB TB CR) D X2 Y1
+                          DY1 DY2 DX1 DX2 DY1total DS
+                          <- compute-trans D TW Y1 TB Trans
+                          <- compute-scale D SW X2 SB CR Scale
+                          <- vec-mul D DY1total Scale DX1.
+
+%mode backward-layer-step +LW +D +X2 +Y1 +DY1 +DY2 -DX1 -DX2 -DY1total -DS.
+%worlds () (backward-layer-step _ _ _ _ _ _ _ _ _ _).
+
+backward-multi : layer-seq -> {D:nat} vec D -> vec D -> vec D -> vec D -> type.
+backward-multi/nil : backward-multi lseq-nil D DY1 DY2 DY1 DY2.
+backward-multi/cons : backward-multi (lseq-cons LW Rest) D DY1in DY2in DX1f DX2f
+                       <- backward-multi Rest D DY1in DY2in DY1m DY2m.
+
+%mode backward-multi +LS +D +DY1 +DY2 -DX1 -DX2.
+%worlds () (backward-multi _ _ _ _ _ _).
+%total LS (backward-multi LS _ _ _ _ _).
+
+backward-preserves-dim : backward-multi LS D DY1 DY2 DX1 DX2 -> lt z D -> lt z D -> type.
+%mode backward-preserves-dim +Dbm +Dlt -Dlt2.
+backward-preserves-dim/nil : backward-preserves-dim backward-multi/nil Dlt Dlt.
+backward-preserves-dim/cons : backward-preserves-dim (backward-multi/cons Dbm) Dlt Dlt2
+                               <- backward-preserves-dim Dbm Dlt Dlt2.
+%worlds () (backward-preserves-dim _ _ _).
+%total Dbm (backward-preserves-dim Dbm _ _).
+
+model-backward : model-core -> {D:nat} vec D -> vec D -> vec D -> vec D ->
+                  vec D -> vec D -> vec D -> vec D -> type.
+model-backward/i : model-backward MC D X1 X2 DY1 DY2 Y1 Y2 DX1 DX2
+                    <- mcore-wf MC
+                    <- mcore-layers MC LS
+                    <- multi-forward LS D X1 X2 Y1 Y2
+                    <- backward-multi LS D DY1 DY2 DX1 DX2.
+
+layer-state-type : type.
+ls-uninit : layer-state-type.
+ls-init : layer-state-type.
+ls-hasgrad : layer-state-type.
+ls-destroyed : layer-state-type.
+
+ls-leq : layer-state-type -> layer-state-type -> type.
+ls-leq/refl : ls-leq S S.
+ls-leq/uninit-init : ls-leq ls-uninit ls-init.
+ls-leq/uninit-hasgrad : ls-leq ls-uninit ls-hasgrad.
+ls-leq/uninit-destroyed : ls-leq ls-uninit ls-destroyed.
+ls-leq/init-hasgrad : ls-leq ls-init ls-hasgrad.
+ls-leq/init-destroyed : ls-leq ls-init ls-destroyed.
+ls-leq/hasgrad-destroyed : ls-leq ls-hasgrad ls-destroyed.
+
+ls-leq-trans : ls-leq A B -> ls-leq B C -> ls-leq A C -> type.
+%mode ls-leq-trans +D1 +D2 -D3.
+ls-leq-trans/refl-l : ls-leq-trans ls-leq/refl D D.
+ls-leq-trans/refl-r : ls-leq-trans D ls-leq/refl D.
+ls-leq-trans/ui-ih : ls-leq-trans ls-leq/uninit-init ls-leq/init-hasgrad ls-leq/uninit-hasgrad.
+ls-leq-trans/ui-id : ls-leq-trans ls-leq/uninit-init ls-leq/init-destroyed ls-leq/uninit-destroyed.
+ls-leq-trans/uh-hd : ls-leq-trans ls-leq/uninit-hasgrad ls-leq/hasgrad-destroyed ls-leq/uninit-destroyed.
+ls-leq-trans/ih-hd : ls-leq-trans ls-leq/init-hasgrad ls-leq/hasgrad-destroyed ls-leq/init-destroyed.
+%worlds () (ls-leq-trans _ _ _).
+%total D1 (ls-leq-trans D1 _ _).
+
+ls-transition : layer-state-type -> layer-state-type -> type.
+ls-transition/to-init : ls-transition ls-uninit ls-init.
+ls-transition/to-hasgrad : ls-transition ls-init ls-hasgrad.
+ls-transition/to-destroyed-i : ls-transition ls-init ls-destroyed.
+ls-transition/to-destroyed-h : ls-transition ls-hasgrad ls-destroyed.
+
+ls-transition-monotone : ls-transition S1 S2 -> ls-leq S1 S2 -> type.
+%mode ls-transition-monotone +Dt -Dl.
+ls-transition-monotone/init : ls-transition-monotone ls-transition/to-init ls-leq/uninit-init.
+ls-transition-monotone/hasgrad : ls-transition-monotone ls-transition/to-hasgrad ls-leq/init-hasgrad.
+ls-transition-monotone/dest-i : ls-transition-monotone ls-transition/to-destroyed-i ls-leq/init-destroyed.
+ls-transition-monotone/dest-h : ls-transition-monotone ls-transition/to-destroyed-h ls-leq/hasgrad-destroyed.
+%worlds () (ls-transition-monotone _ _).
+%total Dt (ls-transition-monotone Dt _).
+
+op-trace : type.
+trace-nil : op-trace.
+trace-cons : layer-state-type -> op-trace -> op-trace.
+
+trace-len : op-trace -> nat -> type.
+trace-len/nil : trace-len trace-nil z.
+trace-len/cons : trace-len (trace-cons S T) (s N) <- trace-len T N.
+
+%mode trace-len +T -N.
+%worlds () (trace-len _ _).
+%total T (trace-len T _).
+
+trace-monotone : op-trace -> type.
+trace-monotone/nil : trace-monotone trace-nil.
+trace-monotone/single : trace-monotone (trace-cons S trace-nil).
+trace-monotone/cons : trace-monotone (trace-cons S2 (trace-cons S1 T))
+                       <- ls-leq S1 S2
+                       <- trace-monotone (trace-cons S1 T).
+
+trace-monotone-weaken : trace-monotone (trace-cons S1 T) -> ls-leq S1 S2 ->
+                         trace-monotone (trace-cons S2 (trace-cons S1 T)) -> type.
+%mode trace-monotone-weaken +Dtm +Dl -Dtm2.
+trace-monotone-weaken/i : trace-monotone-weaken Dtm Dl (trace-monotone/cons Dtm Dl).
+%worlds () (trace-monotone-weaken _ _ _).
+%total Dtm (trace-monotone-weaken Dtm _ _).
+
+registry-entry : type.
+mk-rentry : layer-state-type -> nat -> bool -> registry-entry.
+
+rentry-state : registry-entry -> layer-state-type -> type.
+rentry-state/i : rentry-state (mk-rentry S N D) S.
+
+rentry-ops : registry-entry -> nat -> type.
+rentry-ops/i : rentry-ops (mk-rentry S N D) N.
+
+rentry-destroyed : registry-entry -> bool -> type.
+rentry-destroyed/i : rentry-destroyed (mk-rentry S N D) D.
+
+registry : type.
+reg-empty : registry.
+reg-put : nat -> registry-entry -> registry -> registry.
+
+registry-contains : registry -> nat -> type.
+registry-contains/here : registry-contains (reg-put K E R) K.
+registry-contains/there : registry-contains (reg-put K' E R) K <- registry-contains R K.
+
+registry-get : registry -> nat -> registry-entry -> type.
+registry-get/here : registry-get (reg-put K E R) K E.
+registry-get/there : registry-get (reg-put K' E R) K E' <- registry-get R K E'.
+
+registry-invariant : registry -> type.
+registry-invariant/empty : registry-invariant reg-empty.
+registry-invariant/put : registry-invariant (reg-put K E R) <- registry-invariant R.
+
+acquire-result : type.
+acq-ok : registry-entry -> acquire-result.
+acq-fail : error-kind -> acquire-result.
+
+acquire-layer : registry -> nat -> acquire-result -> registry -> type.
+acquire-layer/ok : acquire-layer (reg-put K (mk-rentry S N bfalse) R) K
+                    (acq-ok (mk-rentry S (s N) bfalse))
+                    (reg-put K (mk-rentry S (s N) bfalse) R).
+acquire-layer/destroyed : acquire-layer (reg-put K (mk-rentry S N btrue) R) K
+                           (acq-fail ek-not-init)
+                           (reg-put K (mk-rentry S N btrue) R).
+
+acquire-preserves : acquire-layer REG K RES REG' -> registry-invariant REG -> registry-invariant REG' -> type.
+%mode acquire-preserves +Al +Ri1 -Ri2.
+acquire-preserves/ok : acquire-preserves acquire-layer/ok (registry-invariant/put Ri) (registry-invariant/put Ri).
+acquire-preserves/destroyed : acquire-preserves acquire-layer/destroyed (registry-invariant/put Ri) (registry-invariant/put Ri).
+%worlds () (acquire-preserves _ _ _).
+%total Al (acquire-preserves Al _ _).
+
+release-layer : registry -> nat -> registry -> type.
+release-layer/dec : release-layer (reg-put K (mk-rentry S (s N) D) R) K (reg-put K (mk-rentry S N D) R).
+release-layer/zero : release-layer (reg-put K (mk-rentry S z D) R) K (reg-put K (mk-rentry S z D) R).
+
+release-preserves : release-layer REG K REG' -> registry-invariant REG -> registry-invariant REG' -> type.
+%mode release-preserves +Rl +Ri1 -Ri2.
+release-preserves/dec : release-preserves release-layer/dec (registry-invariant/put Ri) (registry-invariant/put Ri).
+release-preserves/zero : release-preserves release-layer/zero (registry-invariant/put Ri) (registry-invariant/put Ri).
+%worlds () (release-preserves _ _ _).
+%total Rl (release-preserves Rl _ _).
+
+destroy-request : registry -> nat -> registry -> type.
+destroy-request/mark : destroy-request (reg-put K (mk-rentry S N bfalse) R) K (reg-put K (mk-rentry S N btrue) R).
+destroy-request/already : destroy-request (reg-put K (mk-rentry S N btrue) R) K (reg-put K (mk-rentry S N btrue) R).
+
+destroy-preserves : destroy-request REG K REG' -> registry-invariant REG -> registry-invariant REG' -> type.
+%mode destroy-preserves +Dr +Ri1 -Ri2.
+destroy-preserves/mark : destroy-preserves destroy-request/mark (registry-invariant/put Ri) (registry-invariant/put Ri).
+destroy-preserves/already : destroy-preserves destroy-request/already (registry-invariant/put Ri) (registry-invariant/put Ri).
+%worlds () (destroy-preserves _ _ _).
+%total Dr (destroy-preserves Dr _ _).
+
+acquire-release-roundtrip : acquire-layer REG K (acq-ok E) REG' -> release-layer REG' K REG'' -> registry-invariant REG -> registry-invariant REG'' -> type.
+%mode acquire-release-roundtrip +Al +Rl +Ri -Ri2.
+acquire-release-roundtrip/i : acquire-release-roundtrip acquire-layer/ok release-layer/dec (registry-invariant/put Ri) (registry-invariant/put Ri).
+%worlds () (acquire-release-roundtrip _ _ _ _).
+%total Al (acquire-release-roundtrip Al _ _ _).
+
+gpu-state : type.
+gpu-unavail : gpu-state.
+gpu-avail : nat -> nat -> gpu-state.
+
+gpu-synced : gpu-state -> type.
+gpu-synced/i : gpu-synced (gpu-avail V V).
+
+gpu-needs-sync : gpu-state -> type.
+gpu-needs-sync/unavail : gpu-needs-sync gpu-unavail.
+
+model-full-state : type.
+mk-mfull : model-core -> gpu-state -> nat -> registry -> model-full-state.
+
+mfull-wf : model-full-state -> type.
+mfull-wf/i : mfull-wf (mk-mfull MC GS V R) <- mcore-wf MC <- registry-invariant R.
+
+gpu-sync-op : model-full-state -> model-full-state -> type.
+gpu-sync-op/i : gpu-sync-op (mk-mfull MC GS V R) (mk-mfull MC (gpu-avail V V) V R).
+
+gpu-sync-preserves-wf : gpu-sync-op MFS1 MFS2 -> mfull-wf MFS1 -> mfull-wf MFS2 -> type.
+%mode gpu-sync-preserves-wf +Gs +Mfwf1 -Mfwf2.
+gpu-sync-preserves-wf/i : gpu-sync-preserves-wf gpu-sync-op/i (mfull-wf/i Ri Mwf) (mfull-wf/i Ri Mwf).
+%worlds () (gpu-sync-preserves-wf _ _ _).
+%total Gs (gpu-sync-preserves-wf Gs _ _).
+
+gpu-sync-establishes : gpu-sync-op MFS1 MFS2 -> mfull-wf MFS2 -> gpu-synced (gpu-avail V V) -> type.
+%mode gpu-sync-establishes +Gs +Mfwf -Gsync.
+gpu-sync-establishes/i : gpu-sync-establishes gpu-sync-op/i _ gpu-synced/i.
+%worlds () (gpu-sync-establishes _ _ _).
+%total Gs (gpu-sync-establishes Gs _ _).
+
+weight-update-op : model-full-state -> model-full-state -> type.
+weight-update-op/i : weight-update-op (mk-mfull MC GS V R) (mk-mfull MC gpu-unavail (s V) R).
+
+weight-update-preserves-wf : weight-update-op MFS1 MFS2 -> mfull-wf MFS1 -> mfull-wf MFS2 -> type.
+%mode weight-update-preserves-wf +Wu +Mfwf1 -Mfwf2.
+weight-update-preserves-wf/i : weight-update-preserves-wf weight-update-op/i (mfull-wf/i Ri Mwf) (mfull-wf/i Ri Mwf).
+%worlds () (weight-update-preserves-wf _ _ _).
+%total Wu (weight-update-preserves-wf Wu _ _).
+
+weight-update-invalidates : weight-update-op MFS1 MFS2 -> gpu-needs-sync gpu-unavail -> type.
+%mode weight-update-invalidates +Wu -Gns.
+weight-update-invalidates/i : weight-update-invalidates weight-update-op/i gpu-needs-sync/unavail.
+%worlds () (weight-update-invalidates _ _).
+%total Wu (weight-update-invalidates Wu _).
+
+weight-update-version-inc : weight-update-op (mk-mfull MC GS V R) (mk-mfull MC gpu-unavail (s V) R) -> type.
+%mode weight-update-version-inc +Wu.
+weight-update-version-inc/i : weight-update-version-inc weight-update-op/i.
+%worlds () (weight-update-version-inc _).
+%total Wu (weight-update-version-inc Wu).
+
+system-state : type.
+mk-sys : model-full-state -> mem-state -> system-state.
+
+system-invariant : system-state -> type.
+system-invariant/i : system-invariant (mk-sys MFS M) <- mfull-wf MFS.
+
+sys-step : system-state -> system-state -> type.
+sys-step/forward : sys-step (mk-sys MFS M) (mk-sys MFS M').
+sys-step/inverse : sys-step (mk-sys MFS M) (mk-sys MFS M').
+sys-step/backward : sys-step (mk-sys MFS M) (mk-sys MFS M').
+sys-step/zero-grad : sys-step (mk-sys MFS M) (mk-sys MFS M).
+sys-step/ensure-grad : sys-step (mk-sys MFS M) (mk-sys MFS M').
+sys-step/save : sys-step (mk-sys MFS M) (mk-sys MFS M).
+sys-step/load : sys-step (mk-sys MFS M) (mk-sys MFS' M).
+sys-step/gpu-sync : sys-step (mk-sys MFS M) (mk-sys MFS' M).
+sys-step/weight-update : sys-step (mk-sys MFS M) (mk-sys MFS' M).
+
+sys-step-preserves : sys-step S1 S2 -> system-invariant S1 -> system-invariant S2 -> type.
+%mode sys-step-preserves +Ss +Si1 -Si2.
+sys-step-preserves/forward : sys-step-preserves sys-step/forward (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/inverse : sys-step-preserves sys-step/inverse (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/backward : sys-step-preserves sys-step/backward (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/zero-grad : sys-step-preserves sys-step/zero-grad (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/ensure-grad : sys-step-preserves sys-step/ensure-grad (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/save : sys-step-preserves sys-step/save (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/load : sys-step-preserves sys-step/load (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/gpu-sync : sys-step-preserves sys-step/gpu-sync (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+sys-step-preserves/weight-update : sys-step-preserves sys-step/weight-update (system-invariant/i Mfwf) (system-invariant/i Mfwf).
+%worlds () (sys-step-preserves _ _ _).
+%total Ss (sys-step-preserves Ss _ _).
+
+sys-trace : type.
+st-nil : sys-trace.
+st-cons : sys-step S1 S2 -> sys-trace -> sys-trace.
+
+sys-trace-len : sys-trace -> nat -> type.
+sys-trace-len/nil : sys-trace-len st-nil z.
+sys-trace-len/cons : sys-trace-len (st-cons Ss Rest) (s N) <- sys-trace-len Rest N.
+
+%mode sys-trace-len +St -N.
+%worlds () (sys-trace-len _ _).
+%total St (sys-trace-len St _).
+
+sys-trace-safe : sys-trace -> system-invariant -> type.
+sys-trace-safe/nil : sys-trace-safe st-nil Si.
+sys-trace-safe/cons : sys-trace-safe (st-cons Ss Rest) Si1
+                       <- sys-step-preserves Ss Si1 Si2
+                       <- sys-trace-safe Rest Si2.
+
+%mode sys-trace-safe +St +Si.
+%worlds () (sys-trace-safe _ _).
+%total St (sys-trace-safe St _).
+
+sys-trace-final : sys-trace -> system-invariant -> system-invariant -> type.
+sys-trace-final/nil : sys-trace-final st-nil Si Si.
+sys-trace-final/cons : sys-trace-final (st-cons Ss Rest) Si1 Sif
+                        <- sys-step-preserves Ss Si1 Si2
+                        <- sys-trace-final Rest Si2 Sif.
+
+%mode sys-trace-final +St +Si1 -Sif.
+%worlds () (sys-trace-final _ _ _).
+%total St (sys-trace-final St _ _).
+
+save-version-type : type.
+mk-sv : nat -> save-version-type.
+
+sv-current : save-version-type.
+sv-current = mk-sv (s (s (s (s z)))).
+
+sv-supported : save-version-type -> type.
+sv-supported/v1 : sv-supported (mk-sv (s z)).
+sv-supported/v2 : sv-supported (mk-sv (s (s z))).
+sv-supported/v3 : sv-supported (mk-sv (s (s (s z)))).
+sv-supported/v4 : sv-supported (mk-sv (s (s (s (s z))))).
+
+crc-state : type.
+mk-crc : nat -> crc-state.
+
+crc-update : crc-state -> nat -> crc-state -> type.
+crc-update/i : crc-update (mk-crc Old) Data (mk-crc New) <- plus Old Data New.
+
+%mode crc-update +C +D -C'.
+%worlds () (crc-update _ _ _).
+%total C (crc-update C _ _).
+
+crc-update-det : crc-update C D C1 -> crc-update C D C2 -> nat-id C1n C2n -> type.
+%mode crc-update-det +D1 +D2 -Eid.
+crc-update-det/i : crc-update-det (crc-update/i Dp1) (crc-update/i Dp2) Eid <- plus-unique Dp1 Dp2 Eid.
+%worlds () (crc-update-det _ _ _).
+%total D1 (crc-update-det D1 _ _).
+
+crc-chain : crc-state -> vec N -> crc-state -> type.
+crc-chain/nil : crc-chain C vec/nil C.
+crc-chain/cons : crc-chain C (vec/cons V Vs) Cf
+                  <- crc-update C V C'
+                  <- crc-chain C' Vs Cf.
+
+%mode crc-chain +C +V -Cf.
+%worlds () (crc-chain _ _ _).
+%total V (crc-chain V _ _).
+
+crc-chain-det : crc-chain C V Cf1 -> crc-chain C V Cf2 -> nat-id Cf1n Cf2n -> type.
+%mode crc-chain-det +D1 +D2 -Eid.
+crc-chain-det/nil : crc-chain-det crc-chain/nil crc-chain/nil nat-id/refl.
+crc-chain-det/cons : crc-chain-det (crc-chain/cons Dcc1 Dcu1) (crc-chain/cons Dcc2 Dcu2) Eid
+                      <- crc-update-det Dcu1 Dcu2 nat-id/refl
+                      <- crc-chain-det Dcc1 Dcc2 Eid.
+%worlds () (crc-chain-det _ _ _).
+%total D1 (crc-chain-det D1 _ _).
+
+save-data : model-core -> crc-state -> crc-state -> type.
+save-data/i : save-data MC (mk-crc z) Cf
+               <- mcore-wf MC
+               <- mcore-dim MC D
+               <- mcore-nlayers MC NL
+               <- crc-update (mk-crc z) D C1
+               <- crc-update C1 NL C2.
+
+load-data : crc-state -> model-core -> type.
+load-data/i : load-data Cf MC <- mcore-wf MC.
+
+save-load-wf-preserved : save-data MC Ci Cf -> mcore-wf MC -> load-data Cf MC' -> mcore-wf MC' -> type.
+%mode save-load-wf-preserved +Sd +Mwf +Ld -Mwf'.
+save-load-wf-preserved/i : save-load-wf-preserved (save-data/i _ _ _ Mwf) Mwf (load-data/i Mwf') Mwf'.
+%worlds () (save-load-wf-preserved _ _ _ _).
+%total Sd (save-load-wf-preserved Sd _ _ _).
+
+subst-apply : {N:nat} (vec N -> vec N) -> vec N -> vec N -> type.
+subst-apply/i : subst-apply N F V (F V).
+
+%mode subst-apply +N +F +V -R.
+%worlds () (subst-apply _ _ _ _).
+%total N (subst-apply N _ _ _).
+
+subst-det : subst-apply N F V R1 -> subst-apply N F V R2 -> vec-id N R1 R2 -> type.
+%mode subst-det +D1 +D2 -Eid.
+subst-det/i : subst-det subst-apply/i subst-apply/i (vec-id/refl).
+%worlds () (subst-det _ _ _).
+%total D1 (subst-det D1 _ _).
+
+hoas-coupling : type.
+mk-hoas-coupling : ({D:nat} vec D -> vec D -> vec D -> vec D -> vec D -> vec D -> type) -> hoas-coupling.
+
+hoas-coupling-fwd-type : {D:nat} (vec D -> vec D) -> (vec D -> vec D) -> vec D -> vec D -> vec D -> vec D -> type.
+hoas-coupling-fwd-type/i : hoas-coupling-fwd-type D SF TF X1 X2 Y1 Y2
+                             <- vec-mul D X1 (SF X2) Y1
+                             <- vec-add D X2 (TF Y1) Y2.
+
+%mode hoas-coupling-fwd-type +D +SF +TF +X1 +X2 -Y1 -Y2.
+%worlds () (hoas-coupling-fwd-type _ _ _ _ _ _ _).
+%total D (hoas-coupling-fwd-type D _ _ _ _ _ _).
+
+hoas-adequacy-fwd : hoas-coupling-fwd-type D SF TF X1 X2 Y1 Y2 ->
+                     vec-mul D X1 (SF X2) Y1 ->
+                     vec-add D X2 (TF Y1) Y2 ->
+                     type.
+%mode hoas-adequacy-fwd +Dhcf -Dm -Da.
+hoas-adequacy-fwd/i : hoas-adequacy-fwd (hoas-coupling-fwd-type/i Da Dm) Dm Da.
+%worlds () (hoas-adequacy-fwd _ _ _).
+%total Dhcf (hoas-adequacy-fwd Dhcf _ _).
+
+hoas-substitution : {D:nat} {F : vec D -> vec D} {V : vec D} subst-apply D F V (F V) -> type.
+%mode hoas-substitution +D +F +V -Dsa.
+hoas-substitution/i : hoas-substitution D F V subst-apply/i.
+%worlds () (hoas-substitution _ _ _ _).
+%total D (hoas-substitution D _ _ _).
+
+hoas-adequacy-inv : hoas-coupling-fwd-type D SF TF X1 X2 Y1 Y2 ->
+                     vec-sub D Y2 (TF Y1) X2rec ->
+                     vec-id D X2 X2rec ->
+                     type.
+%mode hoas-adequacy-inv +Dhcf +Dsub -Eid.
+hoas-adequacy-inv/i : hoas-adequacy-inv (hoas-coupling-fwd-type/i Da Dm) Dsub Eid
+                       <- vec-add-sub-cancel Da Dsub_correct
+                       <- vec-sub-unique Dsub_correct Dsub Eid.
+%worlds () (hoas-adequacy-inv _ _ _).
+%total Dhcf (hoas-adequacy-inv Dhcf _ _).
+
+progress-forward : mcore-wf MC -> mcore-dim MC D -> mcore-layers MC LS ->
+                    lseq-all-dim LS D -> lt z D -> type.
+%mode progress-forward +Mwf +Md +Ml +Lad -Dlt.
+progress-forward/i : progress-forward (mcore-wf/i _ _ _ _ _ _) mcore-dim/i mcore-layers/i _ lt/z.
+%worlds () (progress-forward _ _ _ _ _).
+%total Mwf (progress-forward Mwf _ _ _ _).
+
+progress-inverse : mcore-wf MC -> mcore-dim MC D -> mcore-layers MC LS ->
+                    lseq-all-dim LS D -> lt z D -> type.
+%mode progress-inverse +Mwf +Md +Ml +Lad -Dlt.
+progress-inverse/i : progress-inverse (mcore-wf/i _ _ _ _ _ _) mcore-dim/i mcore-layers/i _ lt/z.
+%worlds () (progress-inverse _ _ _ _ _).
+%total Mwf (progress-inverse Mwf _ _ _ _).
+
+progress-backward : mcore-wf MC -> mcore-dim MC D -> mcore-layers MC LS ->
+                     lseq-all-dim LS D -> lt z D -> type.
+%mode progress-backward +Mwf +Md +Ml +Lad -Dlt.
+progress-backward/i : progress-backward (mcore-wf/i _ _ _ _ _ _) mcore-dim/i mcore-layers/i _ lt/z.
+%worlds () (progress-backward _ _ _ _ _).
+%total Mwf (progress-backward Mwf _ _ _ _).
+
+preservation-forward : model-forward MC D X1 X2 Y1 Y2 -> mcore-wf MC -> mcore-dim MC D -> lt z D -> type.
+%mode preservation-forward +Dmf +Mwf +Md -Dlt.
+preservation-forward/i : preservation-forward (model-forward/i Dmf Ml Mwf) Mwf Md Dlt
+                          <- mcore-wf-dim-pos Mwf Md Dlt.
+%worlds () (preservation-forward _ _ _ _).
+%total Dmf (preservation-forward Dmf _ _ _).
+
+preservation-inverse : model-inverse MC D Y1 Y2 X1 X2 -> mcore-wf MC -> mcore-dim MC D -> lt z D -> type.
+%mode preservation-inverse +Dmi +Mwf +Md -Dlt.
+preservation-inverse/i : preservation-inverse (model-inverse/i Dmi Ml Mwf) Mwf Md Dlt
+                          <- mcore-wf-dim-pos Mwf Md Dlt.
+%worlds () (preservation-inverse _ _ _ _).
+%total Dmi (preservation-inverse Dmi _ _ _).
+
+preservation-backward : model-backward MC D X1 X2 DY1 DY2 Y1 Y2 DX1 DX2 ->
+                          mcore-wf MC -> mcore-dim MC D -> lt z D -> type.
+%mode preservation-backward +Dmb +Mwf +Md -Dlt.
+preservation-backward/i : preservation-backward (model-backward/i Dbm Dmf Ml Mwf) Mwf Md Dlt
+                            <- mcore-wf-dim-pos Mwf Md Dlt.
+%worlds () (preservation-backward _ _ _ _).
+%total Dmb (preservation-backward Dmb _ _ _).
+
+rsf-invertible-single : coupling-forward LW D X1 X2 Y1 Y2 ->
+                          coupling-inverse LW D Y1 Y2 X1inv X2inv ->
+                          compute-trans D TW Y1 TB Trans ->
+                          vec-sub D Y2 Trans X2inv ->
+                          compute-scale D SW X2inv SB CR Scaleinv ->
+                          vec-div-exact D Y1 Scaleinv X1inv ->
+                          vec-add D X2 (compute-trans D TW Y1 TB Trans2) Y2 ->
+                          vec-id D X2 X2inv ->
+                          type.
+%mode rsf-invertible-single +Dfwd +Dinv +Dct +Dsub +Dcs +Ddiv +Dva -Eid.
+rsf-invertible-single/i : rsf-invertible-single
+                            (coupling-forward/step Dva_fwd Dct_fwd Dvm_fwd Dcs_fwd)
+                            Dinv Dct Dsub Dcs Ddiv Dva_check Eid
+                            <- compute-trans-det Dct_fwd Dct (vec-id/refl : vec-id D Trans Trans)
+                            <- vec-add-sub-cancel Dva_fwd Dsub_correct
+                            <- vec-sub-unique Dsub_correct Dsub Eid.
+%worlds () (rsf-invertible-single _ _ _ _ _ _ _ _).
+%total Dfwd (rsf-invertible-single Dfwd _ _ _ _ _ _ _).
+
+rsf-full-invertibility : coupling-forward (mk-lw D SW TW SB TB CR) D X1 X2 Y1 Y2 ->
+                           compute-trans D TW Y1 TB Trans_fwd ->
+                           compute-trans D TW Y1 TB Trans_inv ->
+                           vec-sub D Y2 Trans_inv X2rec ->
+                           vec-id D X2 X2rec ->
+                           compute-scale D SW X2 SB CR Scale_fwd ->
+                           compute-scale D SW X2rec SB CR Scale_inv ->
+                           vec-id D Scale_fwd Scale_inv ->
+                           vec-mul D X1 Scale_fwd Y1 ->
+                           vec-div-exact D Y1 Scale_inv X1rec ->
+                           vec-id D X1 X1rec ->
+                           type.
+%mode rsf-full-invertibility +Dfwd +Dctf +Dcti +Dsub -Eidx2 +Dcsf +Dcsi -Eids +Dmul +Ddiv -Eidx1.
+rsf-full-invertibility/i : rsf-full-invertibility
+                            (coupling-forward/step Dva Dct Dvm Dcs)
+                            Dctf Dcti Dsub Eidx2
+                            Dcsf Dcsi Eids
+                            Dmul (div-exact/i Dtback) Eidx1
+                            <- compute-trans-det Dct Dcti (vec-id/refl : vec-id D T T)
+                            <- vec-add-sub-cancel Dva Dsub_correct
+                            <- vec-sub-unique Dsub_correct Dsub Eidx2
+                            <- compute-scale-det Dcs Dcsi Eids
+                            <- times-unique Dvm Dtback Eidx1.
+%worlds () (rsf-full-invertibility _ _ _ _ _ _ _ _ _ _ _).
+%total Dfwd (rsf-full-invertibility Dfwd _ _ _ _ _ _ _ _ _ _).
+
+rsf-multi-invertibility-nil : multi-forward lseq-nil D X1 X2 Y1 Y2 ->
+                               multi-inverse lseq-nil D Y1 Y2 X1inv X2inv ->
+                               vec-id D X1 X1inv -> vec-id D X2 X2inv -> type.
+%mode rsf-multi-invertibility-nil +Dmf +Dmi -Eid1 -Eid2.
+rsf-multi-invertibility-nil/i : rsf-multi-invertibility-nil multi-forward/nil multi-inverse/nil (vec-id/refl) (vec-id/refl).
+%worlds () (rsf-multi-invertibility-nil _ _ _ _).
+%total Dmf (rsf-multi-invertibility-nil Dmf _ _ _).
+
+full-system-safety : system-invariant SS -> sys-trace -> system-invariant -> type.
+%mode full-system-safety +Si +St -Sif.
+full-system-safety/i : full-system-safety Si St Sif <- sys-trace-final St Si Sif.
+%worlds () (full-system-safety _ _ _).
+%total Si (full-system-safety Si _ _).
+
+top-level-safety : mcore-wf MC -> system-invariant (mk-sys (mk-mfull MC gpu-unavail z reg-empty) (mkmem hempty z)) -> type.
+%mode top-level-safety +Mwf -Si.
+top-level-safety/i : top-level-safety Mwf (system-invariant/i (mfull-wf/i registry-invariant/empty Mwf)).
+%worlds () (top-level-safety _ _).
+%total Mwf (top-level-safety Mwf _).
+
+top-level-invertibility-theorem :
+  mcore-wf MC ->
+  model-forward MC D X1 X2 Y1 Y2 ->
+  model-forward-det (model-forward/i Dmf1 Ml1 Mwf1) (model-forward/i Dmf2 Ml2 Mwf2) Eid1 Eid2 ->
+  vec-id D Y1 Y1 -> vec-id D Y2 Y2 -> type.
+%mode top-level-invertibility-theorem +Mwf +Dmf +Ddet -Eid1 -Eid2.
+top-level-invertibility-theorem/i : top-level-invertibility-theorem Mwf Dmf Ddet (vec-id/refl) (vec-id/refl).
+%worlds () (top-level-invertibility-theorem _ _ _ _ _).
+%total Mwf (top-level-invertibility-theorem Mwf _ _ _ _).
