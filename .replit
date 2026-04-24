@@ -1,0 +1,12 @@
+[agent]  
+expertMode = true  
+  
+run = "zig build"  
+language = "zig"  
+entrypoint = "build.zig"  
+  
+[nix]  
+channel = "stable-24_05"  
+  
+[deployment]  
+run = ["sh", "-c", "zig build"]
