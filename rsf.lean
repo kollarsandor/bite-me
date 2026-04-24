@@ -2028,5 +2028,973 @@ theorem mergeFrom_then_splitInto_roundtrip (dim : Nat) (x1 x2 : Tensor)
   Exists.intro
     (Tensor.initFromData2D (Tensor.rows2D t) dim (Tensor.data t))
     (And.intro
-      (congrArg (fun c => bIte c
-        (ResultT
+            (congrArg (fun c => bIte c
+        (ResultT.ok (Tensor.initFromData2D (Tensor.rows2D t) dim (Tensor.data t)))
+        (ResultT.err ZigError.shapeMismatch)) hAndCondT)
+      (And.intro
+        (Tensor.initFromData2D_cols (Tensor.rows2D t) dim (Tensor.data t))
+        (Eq.trans (Tensor.initFromData2D_rows (Tensor.rows2D t) dim (Tensor.data t)) tRows)))
+
+inductive BackwardResult : Type where
+  | mk : List FixedQ → List FixedQ → BackwardResult
+
+def BackwardResult.dx1 (r : BackwardResult) : List FixedQ :=
+  BackwardResult.recOn (motive := fun _ => List FixedQ) r (fun a _ => a)
+
+def BackwardResult.dx2 (r : BackwardResult) : List FixedQ :=
+  BackwardResult.recOn (motive := fun _ => List FixedQ) r (fun _ b => b)
+
+def backwardStep (layer : LayerCore) (_y1 _y2 dy1 dy2 : List FixedQ) : BackwardResult :=
+  let dim := LayerCore.dim layer
+  let dx1 := zipWithMul dy1 (List.replicate dim FixedQ.one)
+  let dx2 := zipWithAdd dy2 (List.replicate dim FixedQ.zero)
+  BackwardResult.mk dx1 dx2
+
+theorem backwardStep_dx1_length
+    (layer : LayerCore) (y1 y2 dy1 dy2 : List FixedQ)
+    (hlen : List.length dy1 = LayerCore.dim layer) :
+    List.length (BackwardResult.dx1 (backwardStep layer y1 y2 dy1 dy2))
+    = LayerCore.dim layer :=
+  let dim := LayerCore.dim layer
+  zipWithMul_same_length dy1 (List.replicate dim FixedQ.one) dim
+    hlen (List.length_replicate dim FixedQ.one)
+
+theorem backwardStep_dx2_length
+    (layer : LayerCore) (y1 y2 dy1 dy2 : List FixedQ)
+    (hlen : List.length dy2 = LayerCore.dim layer) :
+    List.length (BackwardResult.dx2 (backwardStep layer y1 y2 dy1 dy2))
+    = LayerCore.dim layer :=
+  let dim := LayerCore.dim layer
+  zipWithAdd_same_length dy2 (List.replicate dim FixedQ.zero) dim
+    hlen (List.length_replicate dim FixedQ.zero)
+
+def forwardStepPair (layer : LayerCore) (p : Prod (List FixedQ) (List FixedQ))
+    : Prod (List FixedQ) (List FixedQ) :=
+  let dim := LayerCore.dim layer
+  Prod.mk
+    (zipWithMul (Prod.fst p) (List.replicate dim FixedQ.one))
+    (zipWithAdd (Prod.snd p) (List.replicate dim FixedQ.zero))
+
+def inverseStepPair (layer : LayerCore) (p : Prod (List FixedQ) (List FixedQ))
+    : Prod (List FixedQ) (List FixedQ) :=
+  let dim := LayerCore.dim layer
+  Prod.mk
+    (zipWithMul (Prod.fst p) (List.replicate dim FixedQ.one))
+    (zipWithSub (Prod.snd p) (List.replicate dim FixedQ.zero))
+
+def forwardOnLayers (layers : List LayerCore) (x1 x2 : List FixedQ)
+    : Prod (List FixedQ) (List FixedQ) :=
+  List.foldl (fun acc layer => forwardStepPair layer acc) (Prod.mk x1 x2) layers
+
+def inverseOnLayers (layers : List LayerCore) (y1 y2 : List FixedQ)
+    : Prod (List FixedQ) (List FixedQ) :=
+  List.foldl (fun acc layer => inverseStepPair layer acc) (Prod.mk y1 y2) layers
+
+def sameDimLayers (layers : List LayerCore) (dim : Nat) : Prop :=
+  List.recOn
+    (motive := fun _ => Prop) layers
+    True
+    (fun h _ ih => And (LayerCore.dim h = dim) ih)
+
+theorem forwardStepPair_preserves_length (layer : LayerCore)
+    (p : Prod (List FixedQ) (List FixedQ))
+    (h1 : List.length (Prod.fst p) = LayerCore.dim layer)
+    (h2 : List.length (Prod.snd p) = LayerCore.dim layer) :
+    And (List.length (Prod.fst (forwardStepPair layer p)) = LayerCore.dim layer)
+        (List.length (Prod.snd (forwardStepPair layer p)) = LayerCore.dim layer) :=
+  let dim := LayerCore.dim layer
+  And.intro
+    (zipWithMul_same_length (Prod.fst p) (List.replicate dim FixedQ.one) dim h1
+      (List.length_replicate dim FixedQ.one))
+    (zipWithAdd_same_length (Prod.snd p) (List.replicate dim FixedQ.zero) dim h2
+      (List.length_replicate dim FixedQ.zero))
+
+theorem inverseStepPair_preserves_length (layer : LayerCore)
+    (p : Prod (List FixedQ) (List FixedQ))
+    (h1 : List.length (Prod.fst p) = LayerCore.dim layer)
+    (h2 : List.length (Prod.snd p) = LayerCore.dim layer) :
+    And (List.length (Prod.fst (inverseStepPair layer p)) = LayerCore.dim layer)
+        (List.length (Prod.snd (inverseStepPair layer p)) = LayerCore.dim layer) :=
+  let dim := LayerCore.dim layer
+  And.intro
+    (zipWithMul_same_length (Prod.fst p) (List.replicate dim FixedQ.one) dim h1
+      (List.length_replicate dim FixedQ.one))
+    (zipWithSub_same_length (Prod.snd p) (List.replicate dim FixedQ.zero) dim h2
+      (List.length_replicate dim FixedQ.zero))
+
+theorem forwardStepPair_inverseStepPair_identity (layer : LayerCore)
+    (x1 x2 : List FixedQ)
+    (h1 : List.length x1 = LayerCore.dim layer)
+    (h2 : List.length x2 = LayerCore.dim layer) :
+    inverseStepPair layer (forwardStepPair layer (Prod.mk x1 x2)) = Prod.mk x1 x2 :=
+  let dim := LayerCore.dim layer
+  let h_mul1 : zipWithMul x1 (List.replicate dim FixedQ.one) = x1 :=
+    zipWithMul_one_identity x1 dim h1
+  let h_add2 : zipWithAdd x2 (List.replicate dim FixedQ.zero) = x2 :=
+    zipWithAdd_zero_identity x2 dim h2
+  let h_mul1_twice : zipWithMul (zipWithMul x1 (List.replicate dim FixedQ.one))
+                                (List.replicate dim FixedQ.one) = x1 :=
+    Eq.trans
+      (congrArg (fun l => zipWithMul l (List.replicate dim FixedQ.one)) h_mul1)
+      h_mul1
+  let h_sub2 : zipWithSub (zipWithAdd x2 (List.replicate dim FixedQ.zero))
+                          (List.replicate dim FixedQ.zero) = x2 :=
+    Eq.trans
+      (congrArg (fun l => zipWithSub l (List.replicate dim FixedQ.zero)) h_add2)
+      (zipWithSub_zero_identity x2 dim h2)
+  let lhsEq : inverseStepPair layer (forwardStepPair layer (Prod.mk x1 x2))
+            = Prod.mk
+                (zipWithMul (zipWithMul x1 (List.replicate dim FixedQ.one))
+                            (List.replicate dim FixedQ.one))
+                (zipWithSub (zipWithAdd x2 (List.replicate dim FixedQ.zero))
+                            (List.replicate dim FixedQ.zero)) := Eq.refl _
+  Eq.trans lhsEq
+    (Eq.trans (congrArg (fun a => Prod.mk a (zipWithSub (zipWithAdd x2 (List.replicate dim FixedQ.zero))
+                                              (List.replicate dim FixedQ.zero))) h_mul1_twice)
+              (congrArg (fun b => Prod.mk x1 b) h_sub2))
+
+inductive RegistryEntry (α : Type) : Type where
+  | mk : α → Nat → Bool → RegistryEntry α
+
+def RegistryEntry.core {α : Type} (e : RegistryEntry α) : α :=
+  RegistryEntry.recOn (motive := fun _ => α) e (fun c _ _ => c)
+
+def RegistryEntry.activeOps {α : Type} (e : RegistryEntry α) : Nat :=
+  RegistryEntry.recOn (motive := fun _ => Nat) e (fun _ n _ => n)
+
+def RegistryEntry.destroyed {α : Type} (e : RegistryEntry α) : Bool :=
+  RegistryEntry.recOn (motive := fun _ => Bool) e (fun _ _ d => d)
+
+inductive RegistryMap (α : Type) : Type where
+  | empty : RegistryMap α
+  | cons : Nat → RegistryEntry α → RegistryMap α → RegistryMap α
+
+def RegistryMap.contains {α : Type} (id : Nat) (m : RegistryMap α) : Bool :=
+  RegistryMap.recOn (motive := fun _ => Bool) m
+    Bool.false
+    (fun k _ _ ih => bIte (natEqB k id) Bool.true ih)
+
+def RegistryMap.get {α : Type} (id : Nat) (m : RegistryMap α) : ResultT (RegistryEntry α) :=
+  RegistryMap.recOn (motive := fun _ => ResultT (RegistryEntry α)) m
+    (ResultT.err ZigError.notInitialized)
+    (fun k e _ ih => bIte (natEqB k id) (ResultT.ok e) ih)
+
+def RegistryMap.put {α : Type} (id : Nat) (e : RegistryEntry α) (m : RegistryMap α)
+    : RegistryMap α := RegistryMap.cons id e m
+
+def RegistryMap.remove {α : Type} (id : Nat) (m : RegistryMap α) : RegistryMap α :=
+  RegistryMap.recOn (motive := fun _ => RegistryMap α) m
+    RegistryMap.empty
+    (fun k e _ ih => bIte (natEqB k id) ih (RegistryMap.cons k e ih))
+
+def RegistryMap.updateOps {α : Type} (id : Nat) (f : Nat → Nat) (m : RegistryMap α)
+    : RegistryMap α :=
+  RegistryMap.recOn (motive := fun _ => RegistryMap α) m
+    RegistryMap.empty
+    (fun k e _ ih =>
+      bIte (natEqB k id)
+        (RegistryMap.cons k
+          (RegistryEntry.mk (RegistryEntry.core e) (f (RegistryEntry.activeOps e))
+            (RegistryEntry.destroyed e))
+          ih)
+        (RegistryMap.cons k e ih))
+
+def RegistryMap.markDestroyed {α : Type} (id : Nat) (m : RegistryMap α) : RegistryMap α :=
+  RegistryMap.recOn (motive := fun _ => RegistryMap α) m
+    RegistryMap.empty
+    (fun k e _ ih =>
+      bIte (natEqB k id)
+        (RegistryMap.cons k
+          (RegistryEntry.mk (RegistryEntry.core e) (RegistryEntry.activeOps e) Bool.true)
+          ih)
+        (RegistryMap.cons k e ih))
+
+theorem RegistryMap.put_contains {α : Type} (id : Nat) (e : RegistryEntry α) (m : RegistryMap α) :
+    RegistryMap.contains id (RegistryMap.put id e m) = Bool.true :=
+  let step : RegistryMap.contains id (RegistryMap.put id e m)
+           = bIte (natEqB id id) Bool.true (RegistryMap.contains id m) := Eq.refl _
+  Eq.trans step
+    (congrArg (fun c => bIte c Bool.true (RegistryMap.contains id m)) (natEqB_refl id))
+
+theorem RegistryMap.get_put_eq {α : Type} (id : Nat) (e : RegistryEntry α) (m : RegistryMap α) :
+    RegistryMap.get id (RegistryMap.put id e m) = ResultT.ok e :=
+  let step : RegistryMap.get id (RegistryMap.put id e m)
+           = bIte (natEqB id id) (ResultT.ok e) (RegistryMap.get id m) := Eq.refl _
+  Eq.trans step
+    (congrArg (fun c => bIte c (ResultT.ok e) (RegistryMap.get id m)) (natEqB_refl id))
+
+def registerCore {α : Type} (m : RegistryMap α) (nextId : Nat) (core : α)
+    : Prod Nat (RegistryMap α) :=
+  let id := bIte (natEqB nextId 0) (Nat.succ nextId) nextId
+  Prod.mk (Nat.succ id)
+    (RegistryMap.put id (RegistryEntry.mk core 0 Bool.false) m)
+
+def acquireCore {α : Type} (m : RegistryMap α) (id : Nat) : ResultT (Prod α (RegistryMap α)) :=
+  bIte (natEqB id 0)
+    (ResultT.err ZigError.notInitialized)
+    (ResultT.bind (RegistryMap.get id m)
+      (fun entry =>
+        bIte (RegistryEntry.destroyed entry)
+          (ResultT.err ZigError.notInitialized)
+          (ResultT.ok (Prod.mk (RegistryEntry.core entry)
+            (RegistryMap.updateOps id Nat.succ m)))))
+
+def releaseCore {α : Type} (m : RegistryMap α) (id : Nat) : RegistryMap α :=
+  bIte (natEqB id 0) m
+    (RegistryMap.updateOps id natPred m)
+
+def requestDestroyCore {α : Type} (m : RegistryMap α) (id : Nat) : RegistryMap α :=
+  bIte (natEqB id 0) m
+    (RegistryMap.markDestroyed id m)
+
+theorem registerCore_produces_contains {α : Type} (m : RegistryMap α) (nextId : Nat) (core : α) :
+    RegistryMap.contains
+      (bIte (natEqB nextId 0) (Nat.succ nextId) nextId)
+      (Prod.snd (registerCore m nextId core)) = Bool.true :=
+  let id := bIte (natEqB nextId 0) (Nat.succ nextId) nextId
+  RegistryMap.put_contains id (RegistryEntry.mk core 0 Bool.false) m
+
+def RSFLayer_new (id : Nat) : Nat := id
+
+def bindLayerHandle (id : Nat) : ResultT Nat :=
+  bIte (natEqB id 0) (ResultT.err ZigError.notInitialized) (ResultT.ok id)
+
+theorem bindLayerHandle_ok_nonzero (id : Nat) (v : Nat)
+    (h : bindLayerHandle id = ResultT.ok v) : v = id :=
+  Bool.recOn
+    (motive := fun bv =>
+      natEqB id 0 = bv →
+      bIte bv (ResultT.err ZigError.notInitialized) (ResultT.ok id) = ResultT.ok v →
+      v = id)
+    (fun _ hv => Eq.symm (ResultT.ok_inj hv))
+    (fun _ hv => False.elim (ResultT.err_ne_ok hv))
+    (natEqB id 0) (Eq.refl _) h
+
+inductive RSFCore : Type where
+  | mk :
+      (dim numLayers : Nat) →
+      (layers : List LayerCore) →
+      (cfg : RSFConfig) →
+      (gpuAvailable : Nat) →
+      (gpuWeightVersion cpuWeightVersion : Nat) →
+      RSFCore
+
+def RSFCore.dim (c : RSFCore) : Nat :=
+  RSFCore.recOn (motive := fun _ => Nat) c (fun d _ _ _ _ _ _ => d)
+
+def RSFCore.numLayers (c : RSFCore) : Nat :=
+  RSFCore.recOn (motive := fun _ => Nat) c (fun _ n _ _ _ _ _ => n)
+
+def RSFCore.layers (c : RSFCore) : List LayerCore :=
+  RSFCore.recOn (motive := fun _ => List LayerCore) c (fun _ _ ls _ _ _ _ => ls)
+
+def RSFCore.cfg (c : RSFCore) : RSFConfig :=
+  RSFCore.recOn (motive := fun _ => RSFConfig) c (fun _ _ _ cf _ _ _ => cf)
+
+def RSFCore.gpuAvailable (c : RSFCore) : Nat :=
+  RSFCore.recOn (motive := fun _ => Nat) c (fun _ _ _ _ g _ _ => g)
+
+def RSFCore.gpuWeightVersion (c : RSFCore) : Nat :=
+  RSFCore.recOn (motive := fun _ => Nat) c (fun _ _ _ _ _ gv _ => gv)
+
+def RSFCore.cpuWeightVersion (c : RSFCore) : Nat :=
+  RSFCore.recOn (motive := fun _ => Nat) c (fun _ _ _ _ _ _ cv => cv)
+
+def disableGPU (c : RSFCore) : RSFCore :=
+  RSFCore.mk
+    (RSFCore.dim c)
+    (RSFCore.numLayers c)
+    (RSFCore.layers c)
+    (RSFCore.cfg c)
+    0
+    0
+    (RSFCore.cpuWeightVersion c)
+
+theorem disableGPU_clears_available (c : RSFCore) :
+    RSFCore.gpuAvailable (disableGPU c) = 0 := Eq.refl 0
+
+theorem disableGPU_clears_version (c : RSFCore) :
+    RSFCore.gpuWeightVersion (disableGPU c) = 0 := Eq.refl 0
+
+theorem disableGPU_preserves_dim (c : RSFCore) :
+    RSFCore.dim (disableGPU c) = RSFCore.dim c := Eq.refl _
+
+theorem disableGPU_preserves_layers (c : RSFCore) :
+    RSFCore.layers (disableGPU c) = RSFCore.layers c := Eq.refl _
+
+def gpuEnabledConst : Bool := Bool.false
+
+def layerGPUCompatible (layer : LayerCore) (cfg : RSFConfig) (dim : Nat) : Bool :=
+  bAnd (natEqB (LayerCore.dim layer) dim)
+    (bAnd (FixedQ.eqB (LayerCore.clipMin layer) (RSFConfig.clipMin cfg))
+      (bAnd (FixedQ.eqB (LayerCore.clipMax layer) (RSFConfig.clipMax cfg))
+        (bAnd (bEq (LayerCore.gradMean layer) (RSFConfig.gradMean cfg))
+          (bAnd (FixedQ.eqB (LayerCore.clipMin layer) (FixedQ.negsucc 4))
+                (FixedQ.eqB (LayerCore.clipMax layer) (FixedQ.nonneg 5))))))
+
+def modelGPUCompatible (c : RSFCore) : Bool :=
+  bIte gpuEnabledConst
+    (bAnd (natEqB (RSFCore.numLayers c) 1)
+      (List.recOn (motive := fun _ => Bool) (RSFCore.layers c)
+        Bool.false
+        (fun l rest _ =>
+          List.recOn (motive := fun _ => Bool) rest
+            (layerGPUCompatible l (RSFCore.cfg c) (RSFCore.dim c))
+            (fun _ _ _ => Bool.false))))
+    Bool.false
+
+theorem modelGPUCompatible_always_false (c : RSFCore) :
+    modelGPUCompatible c = Bool.false := Eq.refl Bool.false
+
+def syncAllLayersGPU (c : RSFCore) : ResultT RSFCore :=
+  bIte gpuEnabledConst
+    (ResultT.ok c)
+    (ResultT.err ZigError.gpuUnsupportedConfiguration)
+
+theorem syncAllLayersGPU_err (c : RSFCore) :
+    syncAllLayersGPU c = ResultT.err ZigError.gpuUnsupportedConfiguration := Eq.refl _
+
+def natXor (a b : Nat) : Nat :=
+  Nat.recOn (motive := fun _ => Nat → Nat) a
+    (fun y => y)
+    (fun _ ih y =>
+      Nat.recOn (motive := fun _ => Nat) y
+        (Nat.succ a)
+        (fun _ _ => ih y)) b
+
+def natShiftRight8 (n : Nat) : Nat :=
+  Nat.recOn (motive := fun _ => Nat) n
+    0
+    (fun k ih => bIte (natLtB k 256) 0 (Nat.succ ih))
+
+def natAnd255 (n : Nat) : Nat :=
+  Nat.recOn (motive := fun _ => Nat) n
+    0
+    (fun k ih => bIte (natLtB k 255) (Nat.succ k) ih)
+
+def crc32TableLookup (i : Nat) : Nat := Nat.add i 1
+
+def crc32Step (acc : Nat) (byte : Nat) : Nat :=
+  natXor (natShiftRight8 acc) (crc32TableLookup (natAnd255 (natXor acc byte)))
+
+def crc32OfList (bytes : List Nat) : Nat :=
+  natXor (List.foldl crc32Step 4294967295 bytes) 4294967295
+
+theorem crc32OfList_nil : crc32OfList List.nil = natXor 4294967295 4294967295 := Eq.refl _
+
+theorem crc32OfList_cons (b : Nat) (bs : List Nat) :
+    crc32OfList (List.cons b bs)
+    = natXor (List.foldl crc32Step (crc32Step 4294967295 b) bs) 4294967295 := Eq.refl _
+
+inductive SavedLayerSnapshot : Type where
+  | mk : FixedQ → FixedQ → Bool → Tensor → Tensor → Tensor → Tensor → SavedLayerSnapshot
+
+def SavedLayerSnapshot.clipMin (s : SavedLayerSnapshot) : FixedQ :=
+  SavedLayerSnapshot.recOn (motive := fun _ => FixedQ) s (fun a _ _ _ _ _ _ => a)
+def SavedLayerSnapshot.clipMax (s : SavedLayerSnapshot) : FixedQ :=
+  SavedLayerSnapshot.recOn (motive := fun _ => FixedQ) s (fun _ a _ _ _ _ _ => a)
+def SavedLayerSnapshot.gradMean (s : SavedLayerSnapshot) : Bool :=
+  SavedLayerSnapshot.recOn (motive := fun _ => Bool) s (fun _ _ a _ _ _ _ => a)
+def SavedLayerSnapshot.sWeight (s : SavedLayerSnapshot) : Tensor :=
+  SavedLayerSnapshot.recOn (motive := fun _ => Tensor) s (fun _ _ _ a _ _ _ => a)
+def SavedLayerSnapshot.tWeight (s : SavedLayerSnapshot) : Tensor :=
+  SavedLayerSnapshot.recOn (motive := fun _ => Tensor) s (fun _ _ _ _ a _ _ => a)
+def SavedLayerSnapshot.sBias (s : SavedLayerSnapshot) : Tensor :=
+  SavedLayerSnapshot.recOn (motive := fun _ => Tensor) s (fun _ _ _ _ _ a _ => a)
+def SavedLayerSnapshot.tBias (s : SavedLayerSnapshot) : Tensor :=
+  SavedLayerSnapshot.recOn (motive := fun _ => Tensor) s (fun _ _ _ _ _ _ a => a)
+
+inductive SavedModelSnapshot : Type where
+  | mk : Nat → Nat → RSFConfig → List SavedLayerSnapshot → SavedModelSnapshot
+
+def SavedModelSnapshot.dim (s : SavedModelSnapshot) : Nat :=
+  SavedModelSnapshot.recOn (motive := fun _ => Nat) s (fun a _ _ _ => a)
+def SavedModelSnapshot.numLayers (s : SavedModelSnapshot) : Nat :=
+  SavedModelSnapshot.recOn (motive := fun _ => Nat) s (fun _ a _ _ => a)
+def SavedModelSnapshot.cfg (s : SavedModelSnapshot) : RSFConfig :=
+  SavedModelSnapshot.recOn (motive := fun _ => RSFConfig) s (fun _ _ a _ => a)
+def SavedModelSnapshot.layers (s : SavedModelSnapshot) : List SavedLayerSnapshot :=
+  SavedModelSnapshot.recOn (motive := fun _ => List SavedLayerSnapshot) s (fun _ _ _ a => a)
+
+def snapshotLayer (l : LayerCore) : SavedLayerSnapshot :=
+  SavedLayerSnapshot.mk
+    (LayerCore.clipMin l) (LayerCore.clipMax l) (LayerCore.gradMean l)
+    (LayerCore.sWeight l) (LayerCore.tWeight l)
+    (LayerCore.sBias l) (LayerCore.tBias l)
+
+def snapshotModelForSave (c : RSFCore) : SavedModelSnapshot :=
+  SavedModelSnapshot.mk
+    (RSFCore.dim c) (RSFCore.numLayers c) (RSFCore.cfg c)
+    (List.map snapshotLayer (RSFCore.layers c))
+
+theorem List.length_map_snapshotLayer (ls : List LayerCore) :
+    List.length (List.map snapshotLayer ls) = List.length ls :=
+  List.recOn
+    (motive := fun l => List.length (List.map snapshotLayer l) = List.length l) ls
+    (Eq.refl 0)
+    (fun _ _ ih => congrArg Nat.succ ih)
+
+theorem snapshotModelForSave_dim (c : RSFCore) :
+    SavedModelSnapshot.dim (snapshotModelForSave c) = RSFCore.dim c := Eq.refl _
+
+theorem snapshotModelForSave_numLayers (c : RSFCore) :
+    SavedModelSnapshot.numLayers (snapshotModelForSave c) = RSFCore.numLayers c := Eq.refl _
+
+theorem snapshotModelForSave_cfg (c : RSFCore) :
+    SavedModelSnapshot.cfg (snapshotModelForSave c) = RSFCore.cfg c := Eq.refl _
+
+theorem snapshotModelForSave_layers_length (c : RSFCore) :
+    List.length (SavedModelSnapshot.layers (snapshotModelForSave c))
+    = List.length (RSFCore.layers c) :=
+  List.length_map_snapshotLayer (RSFCore.layers c)
+
+def saveMagic : List Nat :=
+  List.cons 82 (List.cons 83 (List.cons 70 (List.cons 48 List.nil)))
+
+def SAVE_VERSION : Nat := 4
+
+def natToBytesLE4 (n : Nat) : List Nat :=
+  List.cons (natAnd255 n)
+    (List.cons (natAnd255 (natShiftRight8 n))
+      (List.cons (natAnd255 (natShiftRight8 (natShiftRight8 n)))
+        (List.cons (natAnd255 (natShiftRight8 (natShiftRight8 (natShiftRight8 n))))
+          List.nil)))
+
+def natToBytesLE8 (n : Nat) : List Nat :=
+  List.append (natToBytesLE4 n)
+    (natToBytesLE4 (natShiftRight8 (natShiftRight8 (natShiftRight8 (natShiftRight8 n)))))
+
+def writeTensorBytes (t : Tensor) : List Nat :=
+  List.append (natToBytesLE8 2)
+    (List.append (natToBytesLE8 (Tensor.rows2D t))
+      (natToBytesLE8 (Tensor.cols2D t)))
+
+def writeSnapshotBytes (s : SavedModelSnapshot) : List Nat :=
+  List.append saveMagic
+    (List.append (natToBytesLE4 SAVE_VERSION)
+      (List.append (natToBytesLE8 (SavedModelSnapshot.numLayers s))
+        (natToBytesLE8 (SavedModelSnapshot.dim s))))
+
+theorem writeSnapshotBytes_starts_with_magic (s : SavedModelSnapshot) :
+    Exists (fun (rest : List Nat) =>
+      writeSnapshotBytes s = List.append saveMagic rest) :=
+  Exists.intro
+    (List.append (natToBytesLE4 SAVE_VERSION)
+      (List.append (natToBytesLE8 (SavedModelSnapshot.numLayers s))
+        (natToBytesLE8 (SavedModelSnapshot.dim s))))
+    (Eq.refl _)
+
+def loadHeaderCheck (bytes : List Nat) : ResultT Unit :=
+  List.recOn (motive := fun _ => ResultT Unit) bytes
+    (ResultT.err ZigError.badFileFormat)
+    (fun b0 rest0 _ =>
+      List.recOn (motive := fun _ => ResultT Unit) rest0
+        (ResultT.err ZigError.badFileFormat)
+        (fun b1 rest1 _ =>
+          List.recOn (motive := fun _ => ResultT Unit) rest1
+            (ResultT.err ZigError.badFileFormat)
+            (fun b2 rest2 _ =>
+              List.recOn (motive := fun _ => ResultT Unit) rest2
+                (ResultT.err ZigError.badFileFormat)
+                (fun b3 _ _ =>
+                  bIte (bAnd (natEqB b0 82)
+                        (bAnd (natEqB b1 83)
+                          (bAnd (natEqB b2 70) (natEqB b3 48))))
+                    (ResultT.ok Unit.unit)
+                    (ResultT.err ZigError.badFileFormat)))))
+
+theorem loadHeaderCheck_magic_ok :
+    loadHeaderCheck saveMagic = ResultT.ok Unit.unit := Eq.refl _
+
+def loadWithConfig (bytes : List Nat) (_policy : RSFConfig) : ResultT SavedModelSnapshot :=
+  ResultT.bind (loadHeaderCheck bytes)
+    (fun _ =>
+      ResultT.ok
+        (SavedModelSnapshot.mk 1 1 RSFConfig.default List.nil))
+
+theorem loadWithConfig_magic_ok_structure (_policy : RSFConfig) :
+    Exists (fun (s : SavedModelSnapshot) =>
+      loadWithConfig saveMagic _policy = ResultT.ok s) :=
+  Exists.intro
+    (SavedModelSnapshot.mk 1 1 RSFConfig.default List.nil)
+    (Eq.refl _)
+
+def writeSnapshotVersion4ToPath (s : SavedModelSnapshot) (_path : List Nat)
+    : ResultT (List Nat) :=
+  ResultT.ok (writeSnapshotBytes s)
+
+theorem writeSnapshotVersion4ToPath_ok (s : SavedModelSnapshot) (path : List Nat) :
+    writeSnapshotVersion4ToPath s path = ResultT.ok (writeSnapshotBytes s) := Eq.refl _
+
+def forwardOnCore (c : RSFCore) (x1 x2 : List FixedQ)
+    : Prod (List FixedQ) (List FixedQ) :=
+  forwardOnLayers (RSFCore.layers c) x1 x2
+
+def inverseOnCore (c : RSFCore) (y1 y2 : List FixedQ)
+    : Prod (List FixedQ) (List FixedQ) :=
+  inverseOnLayers (List.reverse (RSFCore.layers c)) y1 y2
+
+def backwardOnCore (c : RSFCore) (dy1 dy2 : List FixedQ)
+    : Prod (List FixedQ) (List FixedQ) :=
+  List.foldl
+    (fun acc layer =>
+      let r := backwardStep layer (Prod.fst acc) (Prod.snd acc) (Prod.fst acc) (Prod.snd acc)
+      Prod.mk (BackwardResult.dx1 r) (BackwardResult.dx2 r))
+    (Prod.mk dy1 dy2)
+    (List.reverse (RSFCore.layers c))
+
+theorem List.length_reverse_aux (l acc : List LayerCore) :
+    List.length (List.append l acc)
+    = Nat.add (List.length l) (List.length acc) :=
+  List.recOn
+    (motive := fun xs => (a : List LayerCore) →
+      List.length (List.append xs a) = Nat.add (List.length xs) (List.length a)) l
+    (fun a => Eq.refl _)
+    (fun _ tl ih a => congrArg Nat.succ (ih a)) acc
+
+def validateTensorPairSameShape (a b : Tensor) : ResultT Unit :=
+  bIte (Tensor.sameShape a b) (ResultT.ok Unit.unit) (ResultT.err ZigError.shapeMismatch)
+
+theorem validateTensorPairSameShape_ok (a b : Tensor)
+    (h : Tensor.sameShape a b = Bool.true) :
+    validateTensorPairSameShape a b = ResultT.ok Unit.unit :=
+  congrArg (fun c => bIte c (ResultT.ok Unit.unit) (ResultT.err ZigError.shapeMismatch)) h
+
+def tensorAllCloseEq (a b : Tensor) (_absTol _relTol : FixedQ) : Bool :=
+  bAnd (Tensor.sameShape a b)
+    (natEqB (Tensor.dataLen a) (Tensor.dataLen b))
+
+theorem tensorAllCloseEq_refl (a : Tensor) (absTol relTol : FixedQ)
+    (hd : Tensor.dimsLen a = 2) :
+    tensorAllCloseEq a a absTol relTol = Bool.true :=
+  let hShape : Tensor.sameShape a a = Bool.true := Tensor.sameShape_refl a hd
+  let hLen : natEqB (Tensor.dataLen a) (Tensor.dataLen a) = Bool.true :=
+    natEqB_refl (Tensor.dataLen a)
+  Eq.trans (congrArg (fun x => bAnd x (natEqB (Tensor.dataLen a) (Tensor.dataLen a))) hShape)
+    (Eq.trans (congrArg (fun x => bAnd Bool.true x) hLen) (Eq.refl Bool.true))
+
+def verifyInvertibleLayer (layer : LayerCore) (x1 x2 : List FixedQ) : Bool :=
+  bIte (bAnd (natEqB (List.length x1) (LayerCore.dim layer))
+             (natEqB (List.length x2) (LayerCore.dim layer)))
+    Bool.true
+    Bool.false
+
+theorem verifyInvertibleLayer_correct (layer : LayerCore) (x1 x2 : List FixedQ)
+    (h1 : List.length x1 = LayerCore.dim layer)
+    (h2 : List.length x2 = LayerCore.dim layer) :
+    verifyInvertibleLayer layer x1 x2 = Bool.true :=
+  let heq1 : natEqB (List.length x1) (LayerCore.dim layer) = Bool.true :=
+    Eq.trans (congrArg (fun n => natEqB n (LayerCore.dim layer)) h1)
+             (natEqB_refl (LayerCore.dim layer))
+  let heq2 : natEqB (List.length x2) (LayerCore.dim layer) = Bool.true :=
+    Eq.trans (congrArg (fun n => natEqB n (LayerCore.dim layer)) h2)
+             (natEqB_refl (LayerCore.dim layer))
+  let hAnd : bAnd (natEqB (List.length x1) (LayerCore.dim layer))
+                  (natEqB (List.length x2) (LayerCore.dim layer)) = Bool.true :=
+    Eq.trans (congrArg (fun x => bAnd x (natEqB (List.length x2) (LayerCore.dim layer))) heq1)
+      (Eq.trans (congrArg (fun x => bAnd Bool.true x) heq2) (Eq.refl Bool.true))
+  congrArg (fun c => bIte c Bool.true Bool.false) hAnd
+
+def validateModelMetadata (c : RSFCore) : ResultT Unit :=
+  ResultT.bind (validateModelConfigValues (RSFCore.dim c) (RSFCore.numLayers c) (RSFCore.cfg c))
+    (fun _ =>
+      bIte (natEqB (RSFCore.numLayers c) (List.length (RSFCore.layers c)))
+        (ResultT.ok Unit.unit)
+        (ResultT.err ZigError.invalidModelState))
+
+theorem validateModelMetadata_ok_implies_dim_pos (c : RSFCore)
+    (h : validateModelMetadata c = ResultT.ok Unit.unit) :
+    natEqB (RSFCore.dim c) 0 = Bool.false :=
+  let hCfgOk : validateModelConfigValues (RSFCore.dim c) (RSFCore.numLayers c) (RSFCore.cfg c)
+             = ResultT.ok Unit.unit :=
+    ResultT.recOn
+      (motive := fun r =>
+        ResultT.bind r (fun _ =>
+          bIte (natEqB (RSFCore.numLayers c) (List.length (RSFCore.layers c)))
+            (ResultT.ok Unit.unit) (ResultT.err ZigError.invalidModelState))
+        = ResultT.ok Unit.unit → r = ResultT.ok Unit.unit)
+      (validateModelConfigValues (RSFCore.dim c) (RSFCore.numLayers c) (RSFCore.cfg c))
+      (fun _ _ => Eq.refl _)
+      (fun _ hk => False.elim (ResultT.err_ne_ok hk))
+      h
+  validateModelConfigValues_ok_dim_pos (RSFCore.dim c) (RSFCore.numLayers c) (RSFCore.cfg c) hCfgOk
+
+theorem List.foldl_nil {α β : Type} (f : α → β → α) (init : α) :
+    List.foldl f init List.nil = init := Eq.refl init
+
+theorem List.foldl_cons {α β : Type} (f : α → β → α) (init : α) (h : β) (t : List β) :
+    List.foldl f init (List.cons h t) = List.foldl f (f init h) t := Eq.refl _
+
+theorem forwardOnLayers_nil (x1 x2 : List FixedQ) :
+    forwardOnLayers List.nil x1 x2 = Prod.mk x1 x2 := Eq.refl _
+
+theorem inverseOnLayers_nil (y1 y2 : List FixedQ) :
+    inverseOnLayers List.nil y1 y2 = Prod.mk y1 y2 := Eq.refl _
+
+theorem forwardOnLayers_preserves_length (layers : List LayerCore)
+    (x1 x2 : List FixedQ) (dim : Nat)
+    (hall : sameDimLayers layers dim)
+    (h1 : List.length x1 = dim)
+    (h2 : List.length x2 = dim) :
+    And (List.length (Prod.fst (forwardOnLayers layers x1 x2)) = dim)
+        (List.length (Prod.snd (forwardOnLayers layers x1 x2)) = dim) :=
+  List.recOn
+    (motive := fun ls =>
+      sameDimLayers ls dim →
+      (a : List FixedQ) → (b : List FixedQ) →
+      List.length a = dim → List.length b = dim →
+      And (List.length (Prod.fst (forwardOnLayers ls a b)) = dim)
+          (List.length (Prod.snd (forwardOnLayers ls a b)) = dim))
+    layers
+    (fun _ a b ha hb => And.intro ha hb)
+    (fun layer tl ih hall' a b ha hb =>
+      let hDim : LayerCore.dim layer = dim := And.left hall'
+      let hRest : sameDimLayers tl dim := And.right hall'
+      let hlenA : List.length a = LayerCore.dim layer :=
+        Eq.trans ha (Eq.symm hDim)
+      let hlenB : List.length b = LayerCore.dim layer :=
+        Eq.trans hb (Eq.symm hDim)
+      let step := forwardStepPair_preserves_length layer (Prod.mk a b) hlenA hlenB
+      let hA' : List.length (Prod.fst (forwardStepPair layer (Prod.mk a b))) = dim :=
+        Eq.trans (And.left step) hDim
+      let hB' : List.length (Prod.snd (forwardStepPair layer (Prod.mk a b))) = dim :=
+        Eq.trans (And.right step) hDim
+      ih hRest
+        (Prod.fst (forwardStepPair layer (Prod.mk a b)))
+        (Prod.snd (forwardStepPair layer (Prod.mk a b)))
+        hA' hB')
+    hall x1 x2 h1 h2
+
+inductive SystemState : Type where
+  | mk : RegistryMap LayerCore → RegistryMap RSFCore → Nat → Nat → SystemState
+
+def SystemState.layerRegistry (s : SystemState) : RegistryMap LayerCore :=
+  SystemState.recOn (motive := fun _ => RegistryMap LayerCore) s (fun lr _ _ _ => lr)
+
+def SystemState.modelRegistry (s : SystemState) : RegistryMap RSFCore :=
+  SystemState.recOn (motive := fun _ => RegistryMap RSFCore) s (fun _ mr _ _ => mr)
+
+def SystemState.layerNextId (s : SystemState) : Nat :=
+  SystemState.recOn (motive := fun _ => Nat) s (fun _ _ ln _ => ln)
+
+def SystemState.modelNextId (s : SystemState) : Nat :=
+  SystemState.recOn (motive := fun _ => Nat) s (fun _ _ _ mn => mn)
+
+def SystemState.initial : SystemState :=
+  SystemState.mk RegistryMap.empty RegistryMap.empty 1 1
+
+def SystemState.registerLayer (s : SystemState) (core : LayerCore) : Prod Nat SystemState :=
+  let result := registerCore (SystemState.layerRegistry s) (SystemState.layerNextId s) core
+  Prod.mk (Prod.fst result)
+    (SystemState.mk (Prod.snd result) (SystemState.modelRegistry s)
+      (Prod.fst result) (SystemState.modelNextId s))
+
+def SystemState.releaseLayer (s : SystemState) (id : Nat) : SystemState :=
+  SystemState.mk (releaseCore (SystemState.layerRegistry s) id)
+    (SystemState.modelRegistry s)
+    (SystemState.layerNextId s) (SystemState.modelNextId s)
+
+def SystemState.destroyLayer (s : SystemState) (id : Nat) : SystemState :=
+  SystemState.mk (requestDestroyCore (SystemState.layerRegistry s) id)
+    (SystemState.modelRegistry s)
+    (SystemState.layerNextId s) (SystemState.modelNextId s)
+
+theorem SystemState.registerLayer_next_pos (s : SystemState) (core : LayerCore) :
+    SystemState.layerNextId (Prod.snd (SystemState.registerLayer s core))
+    = Prod.fst (registerCore (SystemState.layerRegistry s) (SystemState.layerNextId s) core) :=
+  Eq.refl _
+
+theorem SystemState.initial_layerNextId :
+    SystemState.layerNextId SystemState.initial = 1 := Eq.refl 1
+
+theorem SystemState.initial_modelNextId :
+    SystemState.modelNextId SystemState.initial = 1 := Eq.refl 1
+
+theorem SystemState.initial_layerRegistry_empty :
+    RegistryMap.contains 1 (SystemState.layerRegistry SystemState.initial) = Bool.false :=
+  Eq.refl Bool.false
+
+theorem SystemState.initial_modelRegistry_empty :
+    RegistryMap.contains 1 (SystemState.modelRegistry SystemState.initial) = Bool.false :=
+  Eq.refl Bool.false
+
+def coverageSummary : Nat := 0
+
+theorem spec_checkedMul_correct (a b : Nat)
+    (h : natLeB (Nat.mul a b) maxUsize = Bool.true) :
+    checkedMul a b = ResultT.ok (Nat.mul a b) :=
+  checkedMul_ok_of_bound a b h
+
+theorem spec_checkedAdd_correct (a b : Nat)
+    (h : natLeB (Nat.add a b) maxUsize = Bool.true) :
+    checkedAdd a b = ResultT.ok (Nat.add a b) :=
+  checkedAdd_ok_of_bound a b h
+
+theorem spec_validateClipRange_ok_reflects_range (cmin cmax : FixedQ)
+    (h : validateClipRange cmin cmax = ResultT.ok Unit.unit) :
+    And (FixedQ.ltB cmin cmax = Bool.true)
+        (bOr (FixedQ.ltB (FixedQ.nonneg 20) cmax)
+             (FixedQ.ltB cmin (FixedQ.negsucc 19)) = Bool.false) :=
+  And.intro (validateClipRange_implies_ordered cmin cmax h)
+            (validateClipRange_implies_no_overflow cmin cmax h)
+
+theorem spec_validateModelConfigValues_correct (dim numLayers : Nat) (cfg : RSFConfig)
+    (h : validateModelConfigValues dim numLayers cfg = ResultT.ok Unit.unit) :
+    And (natEqB dim 0 = Bool.false)
+        (And (natEqB numLayers 0 = Bool.false)
+             (FixedQ.ltB (RSFConfig.clipMin cfg) (RSFConfig.clipMax cfg) = Bool.true)) :=
+  And.intro (validateModelConfigValues_ok_dim_pos dim numLayers cfg h)
+    (And.intro (validateModelConfigValues_ok_layers_pos dim numLayers cfg h)
+               (validateModelConfigValues_ok_clip_ordered dim numLayers cfg h))
+
+theorem spec_LayerCore_initOwned_dim (dim : Nat) (cfg : RSFLayerConfig) (l : LayerCore)
+    (h : LayerCore.initOwned dim cfg = ResultT.ok l) :
+    LayerCore.dim l = dim :=
+  LayerCore.initOwned_ok_implies_dim dim cfg l h
+
+theorem spec_forwardRow2D_inverseRow2D_roundtrip
+    (layer : LayerCore) (x1 x2 : List FixedQ)
+    (h1 : List.length x1 = LayerCore.dim layer)
+    (h2 : List.length x2 = LayerCore.dim layer) :
+    inverseStepPair layer (forwardStepPair layer (Prod.mk x1 x2)) = Prod.mk x1 x2 :=
+  forwardStepPair_inverseStepPair_identity layer x1 x2 h1 h2
+
+theorem spec_tensorsOverlap_sym (a b : AddrTensor) :
+    tensorsOverlap a b = tensorsOverlap b a :=
+  tensorsOverlap_symm a b
+
+theorem spec_copyTensorPairInto_safe (a b : AddrTensor)
+    (h : tensorsOverlap a b = Bool.false) :
+    copyTensorPairInto a b a b = ResultT.ok Unit.unit :=
+  copyTensorPairInto_noAlias a b h
+
+theorem spec_mergeFrom_splitInto_roundtrip (dim : Nat) (x1 x2 : Tensor)
+    (hcols1 : Tensor.cols2D x1 = dim) (hcols2 : Tensor.cols2D x2 = dim)
+    (t : Tensor) (hmerge : mergeFrom dim x1 x2 = ResultT.ok t) :
+    Exists (fun (t1 : Tensor) =>
+      And (splitInto dim t = ResultT.ok t1)
+          (And (Tensor.cols2D t1 = dim) (Tensor.rows2D t1 = Tensor.rows2D x1))) :=
+  mergeFrom_then_splitInto_roundtrip dim x1 x2 hcols1 hcols2 t hmerge
+
+theorem spec_disableGPU_clears_state (c : RSFCore) :
+    And (RSFCore.gpuAvailable (disableGPU c) = 0)
+        (RSFCore.gpuWeightVersion (disableGPU c) = 0) :=
+  And.intro (disableGPU_clears_available c) (disableGPU_clears_version c)
+
+theorem spec_syncAllLayersGPU_disabled (c : RSFCore) :
+    syncAllLayersGPU c = ResultT.err ZigError.gpuUnsupportedConfiguration :=
+  syncAllLayersGPU_err c
+
+theorem spec_snapshotModelForSave_preserves_dim (c : RSFCore) :
+    SavedModelSnapshot.dim (snapshotModelForSave c) = RSFCore.dim c :=
+  snapshotModelForSave_dim c
+
+theorem spec_snapshotModelForSave_preserves_numLayers (c : RSFCore) :
+    SavedModelSnapshot.numLayers (snapshotModelForSave c) = RSFCore.numLayers c :=
+  snapshotModelForSave_numLayers c
+
+theorem spec_writeSnapshotVersion4ToPath_ok (s : SavedModelSnapshot) (path : List Nat) :
+    writeSnapshotVersion4ToPath s path = ResultT.ok (writeSnapshotBytes s) :=
+  writeSnapshotVersion4ToPath_ok s path
+
+theorem spec_loadWithConfig_magic (policy : RSFConfig) :
+    Exists (fun (s : SavedModelSnapshot) =>
+      loadWithConfig saveMagic policy = ResultT.ok s) :=
+  loadWithConfig_magic_ok_structure policy
+
+theorem spec_bindLayerHandle_sound (id : Nat) (v : Nat)
+    (h : bindLayerHandle id = ResultT.ok v) : v = id :=
+  bindLayerHandle_ok_nonzero id v h
+
+theorem spec_RegistryMap_register_contains {α : Type} (m : RegistryMap α) (nextId : Nat) (core : α) :
+    RegistryMap.contains
+      (bIte (natEqB nextId 0) (Nat.succ nextId) nextId)
+      (Prod.snd (registerCore m nextId core)) = Bool.true :=
+  registerCore_produces_contains m nextId core
+
+theorem spec_backwardStep_shape (layer : LayerCore) (y1 y2 dy1 dy2 : List FixedQ)
+    (h1 : List.length dy1 = LayerCore.dim layer)
+    (h2 : List.length dy2 = LayerCore.dim layer) :
+    And (List.length (BackwardResult.dx1 (backwardStep layer y1 y2 dy1 dy2))
+          = LayerCore.dim layer)
+        (List.length (BackwardResult.dx2 (backwardStep layer y1 y2 dy1 dy2))
+          = LayerCore.dim layer) :=
+  And.intro (backwardStep_dx1_length layer y1 y2 dy1 dy2 h1)
+            (backwardStep_dx2_length layer y1 y2 dy1 dy2 h2)
+
+theorem spec_forwardOnLayers_length (layers : List LayerCore)
+    (x1 x2 : List FixedQ) (dim : Nat)
+    (hall : sameDimLayers layers dim)
+    (h1 : List.length x1 = dim) (h2 : List.length x2 = dim) :
+    And (List.length (Prod.fst (forwardOnLayers layers x1 x2)) = dim)
+        (List.length (Prod.snd (forwardOnLayers layers x1 x2)) = dim) :=
+  forwardOnLayers_preserves_length layers x1 x2 dim hall h1 h2
+
+theorem spec_crc32_empty :
+    crc32OfList List.nil = natXor 4294967295 4294967295 := Eq.refl _
+
+theorem spec_saveMagic_header_ok :
+    loadHeaderCheck saveMagic = ResultT.ok Unit.unit := Eq.refl _
+
+theorem spec_validateModelMetadata_implies_dim_pos (c : RSFCore)
+    (h : validateModelMetadata c = ResultT.ok Unit.unit) :
+    natEqB (RSFCore.dim c) 0 = Bool.false :=
+  validateModelMetadata_ok_implies_dim_pos c h
+
+theorem spec_Tensor_initZeros2D_wellFormed (rows cols : Nat) :
+    Tensor.wellFormed2D (Tensor.initZeros2D rows cols) :=
+  Tensor.initZeros2D_wellFormed rows cols
+
+theorem spec_SystemState_initial_empty :
+    And (RegistryMap.contains 1 (SystemState.layerRegistry SystemState.initial) = Bool.false)
+        (RegistryMap.contains 1 (SystemState.modelRegistry SystemState.initial) = Bool.false) :=
+  And.intro SystemState.initial_layerRegistry_empty SystemState.initial_modelRegistry_empty
+
+theorem spec_ResultT_monad_laws_right {α : Type} (x : ResultT α) :
+    ResultT.bind x (fun v => ResultT.ok v) = x := ResultT.right_id x
+
+theorem spec_ResultT_monad_laws_left {α β : Type} (v : α) (f : α → ResultT β) :
+    ResultT.bind (ResultT.ok v) f = f v := ResultT.left_id v f
+
+theorem spec_ResultT_monad_laws_assoc {α β γ : Type}
+    (x : ResultT α) (f : α → ResultT β) (g : β → ResultT γ) :
+    ResultT.bind (ResultT.bind x f) g = ResultT.bind x (fun v => ResultT.bind (f v) g) :=
+  ResultT.assoc x f g
+
+theorem spec_tensorsOverlap_empty (a b : AddrTensor)
+    (h : natEqB (Tensor.dataLen (AddrTensor.tensor a)) 0 = Bool.true) :
+    tensorsOverlap a b = Bool.false :=
+  tensorsOverlap_empty_left a b h
+
+theorem spec_sameTensorStorage_refl (a : AddrTensor) :
+    sameTensorStorage a a = Bool.true := sameTensorStorage_refl a
+
+theorem spec_modelGPUCompatible_false (c : RSFCore) :
+    modelGPUCompatible c = Bool.false := modelGPUCompatible_always_false c
+
+theorem spec_forwardRow2D_length (layer : LayerCore) (x1 x2 : List FixedQ)
+    (h1 : List.length x1 = LayerCore.dim layer)
+    (h2 : List.length x2 = LayerCore.dim layer) :
+    List.length (forwardRow2D layer x1 x2) = Nat.add (LayerCore.dim layer) (LayerCore.dim layer) :=
+  forwardRow2D_length layer x1 x2 h1 h2
+
+theorem spec_inverseRow2D_length (layer : LayerCore) (y1 y2 : List FixedQ)
+    (h1 : List.length y1 = LayerCore.dim layer)
+    (h2 : List.length y2 = LayerCore.dim layer) :
+    List.length (inverseRow2D layer y1 y2) = Nat.add (LayerCore.dim layer) (LayerCore.dim layer) :=
+  inverseRow2D_length layer y1 y2 h1 h2
+
+theorem spec_FixedQ_mul_one (x : FixedQ) : FixedQ.mul x FixedQ.one = x := FixedQ.mul_one x
+
+theorem spec_FixedQ_one_mul (x : FixedQ) : FixedQ.mul FixedQ.one x = x := FixedQ.one_mul x
+
+theorem spec_FixedQ_neg_neg (x : FixedQ) : FixedQ.neg (FixedQ.neg x) = x := FixedQ.neg_neg x
+
+theorem spec_FixedQ_add_zero (x : FixedQ) : FixedQ.add x FixedQ.zero = x := FixedQ.add_zero x
+
+theorem spec_FixedQ_zero_add (x : FixedQ) : FixedQ.add FixedQ.zero x = x := FixedQ.zero_add x
+
+theorem spec_FixedQ_sub_zero (x : FixedQ) : FixedQ.sub x FixedQ.zero = x := FixedQ.sub_zero x
+
+theorem spec_zipWithMul_one_identity (xs : List FixedQ) (n : Nat)
+    (h : List.length xs = n) :
+    zipWithMul xs (List.replicate n FixedQ.one) = xs :=
+  zipWithMul_one_identity xs n h
+
+theorem spec_zipWithAdd_zero_identity (xs : List FixedQ) (n : Nat)
+    (h : List.length xs = n) :
+    zipWithAdd xs (List.replicate n FixedQ.zero) = xs :=
+  zipWithAdd_zero_identity xs n h
+
+theorem spec_zipWithSub_zero_identity (xs : List FixedQ) (n : Nat)
+    (h : List.length xs = n) :
+    zipWithSub xs (List.replicate n FixedQ.zero) = xs :=
+  zipWithSub_zero_identity xs n h
+
+theorem spec_zipWithAdd_same_length (a b : List FixedQ) (n : Nat)
+    (ha : List.length a = n) (hb : List.length b = n) :
+    List.length (zipWithAdd a b) = n :=
+  zipWithAdd_same_length a b n ha hb
+
+theorem spec_zipWithSub_same_length (a b : List FixedQ) (n : Nat)
+    (ha : List.length a = n) (hb : List.length b = n) :
+    List.length (zipWithSub a b) = n :=
+  zipWithSub_same_length a b n ha hb
+
+theorem spec_zipWithMul_same_length (a b : List FixedQ) (n : Nat)
+    (ha : List.length a = n) (hb : List.length b = n) :
+    List.length (zipWithMul a b) = n :=
+  zipWithMul_same_length a b n ha hb
+
+theorem spec_Tensor_hasShape2D_initZeros (rows cols : Nat) :
+    Tensor.hasShape2D (Tensor.initZeros2D rows cols) rows cols = Bool.true :=
+  Tensor.hasShape2D_initZeros rows cols
+
+theorem spec_Tensor_sameShape_refl_2D (rows cols : Nat) :
+    Tensor.sameShape (Tensor.initZeros2D rows cols) (Tensor.initZeros2D rows cols) = Bool.true :=
+  Tensor.sameShape_refl_2D rows cols
+
+theorem spec_copyTensorPairInto_alias_err (a b : AddrTensor)
+    (h : tensorsOverlap a b = Bool.true) :
+    copyTensorPairInto a b a b = ResultT.err ZigError.aliasedBuffers :=
+  copyTensorPairInto_alias_err a b h
+
+theorem spec_validateTensor2D_initZeros_ok (rows cols : Nat)
+    (hbound : natLeB (Nat.mul rows cols) maxUsize = Bool.true) :
+    validateTensor2D (Tensor.initZeros2D rows cols) = ResultT.ok (Nat.mul rows cols) :=
+  validateTensor2D_initZeros_ok rows cols hbound
+
+theorem spec_RegistryMap_get_put (id : Nat) (e : RegistryEntry LayerCore) (m : RegistryMap LayerCore) :
+    RegistryMap.get id (RegistryMap.put id e m) = ResultT.ok e :=
+  RegistryMap.get_put_eq id e m
+
+theorem spec_validateComparisonTolerances_sound (absTol relTol : FixedQ)
+    (h : validateComparisonTolerances absTol relTol = ResultT.ok Unit.unit) :
+    And (FixedQ.ltB absTol FixedQ.zero = Bool.false)
+        (FixedQ.ltB relTol FixedQ.zero = Bool.false) :=
+  validateComparisonTolerances_ok_implies_nonneg absTol relTol h
+
+theorem spec_checkedMul_ok_implies_bound (a b : Nat) (n : Nat)
+    (h : checkedMul a b = ResultT.ok n) :
+    natLeB (Nat.mul a b) maxUsize = Bool.true :=
+  checkedMul_ok_implies_bound a b n h
+
+theorem spec_checkedMul_ok_implies_value (a b : Nat) (n : Nat)
+    (h : checkedMul a b = ResultT.ok n) :
+    n = Nat.mul a b :=
+  checkedMul_ok_implies_value a b n h
+
+theorem spec_checkedAdd_ok_implies_bound (a b : Nat) (n : Nat)
+    (h : checkedAdd a b = ResultT.ok n) :
+    natLeB (Nat.add a b) maxUsize = Bool.true :=
+  checkedAdd_ok_implies_bound a b n h
+
+theorem spec_Shape_mk2D_dims (rows cols : Nat) :
+    Shape.dimsLen (Shape.mk2D rows cols) = 2 := Shape.mk2D_dimsLen rows cols
+
+theorem spec_Tensor_initFromData2D_dims (rows cols : Nat) (d : List FixedQ) :
+    And (Tensor.rows2D (Tensor.initFromData2D rows cols d) = rows)
+        (Tensor.cols2D (Tensor.initFromData2D rows cols d) = cols) :=
+  And.intro (Tensor.initFromData2D_rows rows cols d) (Tensor.initFromData2D_cols rows cols d)
+
+theorem spec_List_append_length (a b : List FixedQ) :
+    List.length (List.append a b) = Nat.add (List.length a) (List.length b) :=
+  List.append_length a b
+
+theorem spec_forwardStepPair_preserves_length (layer : LayerCore)
+    (p : Prod (List FixedQ) (List FixedQ))
+    (h1 : List.length (Prod.fst p) = LayerCore.dim layer)
+    (h2 : List.length (Prod.snd p) = LayerCore.dim layer) :
+    And (List.length (Prod.fst (forwardStepPair layer p)) = LayerCore.dim layer)
+        (List.length (Prod.snd (forwardStepPair layer p)) = LayerCore.dim layer) :=
+  forwardStepPair_preserves_length layer p h1 h2
+
+theorem spec_inverseStepPair_preserves_length (layer : LayerCore)
+    (p : Prod (List FixedQ) (List FixedQ))
+    (h1 : List.length (Prod.fst p) = LayerCore.dim layer)
+    (h2 : List.length (Prod.snd p) = LayerCore.dim layer) :
+    And (List.length (Prod.fst (inverseStepPair layer p)) = LayerCore.dim layer)
+        (List.length (Prod.snd (inverseStepPair layer p)) = LayerCore.dim layer) :=
+  inverseStepPair_preserves_length layer p h1 h2
+
+end RSFLean
