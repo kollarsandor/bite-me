@@ -6,6 +6,8 @@ const RSFAccelerator = accel.RSFAccelerator;
 const FutharkArray2DF16 = accel.FutharkArray2DF16;
 const FutharkArray1DF16 = accel.FutharkArray1DF16;
 const PinnedMemory = accel.PinnedMemory;
+const persistence = @import("persistence.zig");
+const rsf_pheap = @import("../pheap/src/api.zig");
 
 pub const TrainerConfig = struct {
     learning_rate: f32 = 0.001,
@@ -26,6 +28,10 @@ pub const DistributedTrainerFuthark = struct {
     learning_rate: f32,
     momentum: f32,
     config: TrainerConfig,
+    store: ?persistence.CheckpointStore,
+    store_dir: ?std.fs.Dir,
+    store_dir_path: ?[]u8,
+    last_checkpoint_path: ?[]u8,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -72,7 +78,7 @@ pub const DistributedTrainerFuthark = struct {
         var tokenizer = try MGT.init(allocator, vocab, empty_anchors);
         errdefer tokenizer.deinit();
 
-        var accelerator = try RSFAccelerator.init(model_dim);
+        var accelerator = try RSFAccelerator.init(model_dim, coordinator.device_id);
         errdefer accelerator.deinit();
 
         return DistributedTrainerFuthark{
@@ -87,13 +93,125 @@ pub const DistributedTrainerFuthark = struct {
             .learning_rate = config.learning_rate,
             .momentum = config.momentum,
             .config = config,
+            .store = null,
+            .store_dir = null,
+            .store_dir_path = null,
+            .last_checkpoint_path = null,
         };
     }
 
     pub fn deinit(self: *DistributedTrainerFuthark) void {
         self.accelerator.sync() catch {};
+        self.disablePersistence();
         self.accelerator.deinit();
         self.tokenizer.deinit();
+    }
+
+    pub fn enablePersistence(self: *DistributedTrainerFuthark, path: []const u8) !void {
+        if (path.len == 0) return error.InvalidCheckpointPath;
+        if (self.store != null) {
+            if (self.last_checkpoint_path) |existing| {
+                if (std.mem.eql(u8, existing, path)) return;
+            }
+            self.disablePersistence();
+        }
+        const dirname_opt = std.fs.path.dirname(path);
+        const basename = std.fs.path.basename(path);
+        if (basename.len == 0) return error.InvalidCheckpointPath;
+        var dir_path_owned: []u8 = undefined;
+        if (dirname_opt) |dirname| {
+            dir_path_owned = try self.allocator.dupe(u8, dirname);
+        } else {
+            dir_path_owned = try self.allocator.dupe(u8, ".");
+        }
+        errdefer self.allocator.free(dir_path_owned);
+        if (std.fs.path.isAbsolute(dir_path_owned)) {
+            std.fs.makeDirAbsolute(dir_path_owned) catch |e| switch (e) {
+                error.PathAlreadyExists => {},
+                else => return e,
+            };
+        } else {
+            std.fs.cwd().makePath(dir_path_owned) catch {};
+        }
+        var dir = if (std.fs.path.isAbsolute(dir_path_owned))
+            try std.fs.openDirAbsolute(dir_path_owned, .{})
+        else
+            try std.fs.cwd().openDir(dir_path_owned, .{});
+        errdefer dir.close();
+        const path_owned = try self.allocator.dupe(u8, path);
+        errdefer self.allocator.free(path_owned);
+        const rank_u32: u32 = @intCast(self.coordinator.rank);
+        const world_u32: u32 = @intCast(self.coordinator.world_size);
+        var store = try persistence.CheckpointStore.openWithRank(self.allocator, dir, basename, rank_u32, world_u32);
+        errdefer store.close();
+        self.store = store;
+        self.store_dir = dir;
+        self.store_dir_path = dir_path_owned;
+        self.last_checkpoint_path = path_owned;
+    }
+
+    pub fn disablePersistence(self: *DistributedTrainerFuthark) void {
+        if (self.store) |*s| s.close();
+        self.store = null;
+        if (self.store_dir) |*d| d.close();
+        self.store_dir = null;
+        if (self.store_dir_path) |p| self.allocator.free(p);
+        self.store_dir_path = null;
+        if (self.last_checkpoint_path) |p| self.allocator.free(p);
+        self.last_checkpoint_path = null;
+    }
+
+    pub fn recordTrainingStep(self: *DistributedTrainerFuthark, kind: persistence.StepRecordKind, payload: []const u8) !u64 {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        return try store_ptr.recordStep(kind, payload);
+    }
+
+    pub fn replayWal(self: *DistributedTrainerFuthark, applier: rsf_pheap.recovery.WalApplier) !usize {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        return try store_ptr.replay(applier);
+    }
+
+    pub fn replayClusterWal(self: *DistributedTrainerFuthark, applier: rsf_pheap.recovery.WalApplier) !usize {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        return try store_ptr.replayClusterWal(applier);
+    }
+
+    pub fn aggregateClusterWal(self: *DistributedTrainerFuthark) !persistence.ClusterAggregateReport {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        return try store_ptr.aggregateClusterWal();
+    }
+
+    pub fn truncateWal(self: *DistributedTrainerFuthark) !void {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        try store_ptr.truncateWal();
+    }
+
+    pub fn truncateClusterWal(self: *DistributedTrainerFuthark) !void {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        try store_ptr.truncateClusterWal();
+    }
+
+    pub fn truncateAllRankWals(self: *DistributedTrainerFuthark) !void {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        try store_ptr.truncateAllRankWals();
+    }
+
+    pub fn repairCheckpoint(self: *DistributedTrainerFuthark) !rsf_pheap.RepairReport {
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
+        return try store_ptr.repairCheckpoint();
+    }
+
+    pub fn appendApplyUpdateRecord(self: *DistributedTrainerFuthark, loss: f32, batch_size: usize) !u64 {
+        const store_ptr = if (self.store) |*s| s else return 0;
+        var rec_buf: [40]u8 = undefined;
+        std.mem.writeIntLittle(u64, rec_buf[0..8], @as(u64, @intCast(self.global_step)));
+        std.mem.writeIntLittle(u64, rec_buf[8..16], @as(u64, @intCast(batch_size)));
+        std.mem.writeIntLittle(u32, rec_buf[16..20], @as(u32, @bitCast(loss)));
+        std.mem.writeIntLittle(u32, rec_buf[20..24], @as(u32, @bitCast(self.learning_rate)));
+        std.mem.writeIntLittle(u32, rec_buf[24..28], @as(u32, @bitCast(self.momentum)));
+        std.mem.writeIntLittle(u32, rec_buf[28..32], @as(u32, @intCast(self.coordinator.rank)));
+        std.mem.writeIntLittle(u64, rec_buf[32..40], @as(u64, @intCast(std.time.nanoTimestamp())));
+        return try store_ptr.recordStep(.apply_update, &rec_buf);
     }
 
     fn hasDatasetText(self: *DistributedTrainerFuthark, line: []const u8) bool {
@@ -347,7 +465,6 @@ pub const DistributedTrainerFuthark = struct {
                 std.debug.print("[Step {d}] Loss: {d:.4}\n", .{ self.global_step, loss });
             }
 
-            self.global_step +|= 1;
             batch_start = batch_end;
         }
 
@@ -472,25 +589,47 @@ pub const DistributedTrainerFuthark = struct {
         try self.applyDelta(weights_t_before, weights_t_after, .t);
         try self.accelerator.sync();
 
-        return @as(f32, @floatCast(loss_f16));
+        const loss_f32: f32 = @floatCast(loss_f16);
+        self.global_step +%= 1;
+        if (self.store != null) {
+            _ = self.appendApplyUpdateRecord(loss_f32, batch_size) catch |err| {
+                std.debug.print("[Rank {d}] WAL append failed for step {d}: {}\n", .{ self.coordinator.rank, self.global_step, err });
+                return err;
+            };
+        }
+        return loss_f32;
     }
 
     pub fn saveCheckpoint(self: *DistributedTrainerFuthark, path: []const u8) !void {
+        try self.coordinator.synchronize();
+        try self.accelerator.sync();
+        try self.coordinator.barrier();
+
+        try self.enablePersistence(path);
+
         if (!self.coordinator.isRoot()) {
             return;
         }
 
-        try self.coordinator.synchronize();
-        try self.accelerator.sync();
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
 
-        const file = std.fs.createFileAbsolute(path, .{ .mode = 0o600 }) catch |err| {
-            std.debug.print("Failed to create checkpoint file: {}\n", .{err});
-            return err;
+        const cluster_report = store_ptr.aggregateClusterWal() catch |err| blk: {
+            std.debug.print(
+                "[Rank {d}] aggregateClusterWal failed: {} (continuing with snapshot save)\n",
+                .{ self.coordinator.rank, err },
+            );
+            break :blk persistence.ClusterAggregateReport{
+                .ranks_processed = @intCast(self.coordinator.world_size),
+                .ranks_present = 0,
+                .total_records = 0,
+                .bytes_written = 0,
+                .output_path = store_ptr.clusterWalPath(),
+            };
         };
-        defer file.close();
 
-        var buffered_writer = std.io.bufferedWriter(file.writer());
-        var writer = buffered_writer.writer();
+        var payload = std.ArrayList(u8).init(self.allocator);
+        defer payload.deinit();
+        const writer = payload.writer();
 
         try writer.writeInt(u32, self.config.checkpoint_version, .little);
         try writer.writeInt(u64, @as(u64, @intCast(self.global_step)), .little);
@@ -505,7 +644,6 @@ pub const DistributedTrainerFuthark = struct {
             }
             self.allocator.free(weights_s_vals);
         }
-
         for (weights_s_vals) |row| {
             for (row) |weight| {
                 const weight_f32: f32 = @floatCast(weight);
@@ -520,7 +658,6 @@ pub const DistributedTrainerFuthark = struct {
             }
             self.allocator.free(weights_t_vals);
         }
-
         for (weights_t_vals) |row| {
             for (row) |weight| {
                 const weight_f32: f32 = @floatCast(weight);
@@ -530,7 +667,6 @@ pub const DistributedTrainerFuthark = struct {
 
         const s_bias_vals = try self.accelerator.s_bias.values1D(&self.accelerator.ctx, self.allocator);
         defer self.allocator.free(s_bias_vals);
-
         for (s_bias_vals) |b| {
             const b_f32: f32 = @floatCast(b);
             try writer.writeInt(u32, @as(u32, @bitCast(b_f32)), .little);
@@ -538,7 +674,6 @@ pub const DistributedTrainerFuthark = struct {
 
         const t_bias_vals = try self.accelerator.t_bias.values1D(&self.accelerator.ctx, self.allocator);
         defer self.allocator.free(t_bias_vals);
-
         for (t_bias_vals) |b| {
             const b_f32: f32 = @floatCast(b);
             try writer.writeInt(u32, @as(u32, @bitCast(b_f32)), .little);
@@ -547,20 +682,54 @@ pub const DistributedTrainerFuthark = struct {
         try writer.writeInt(u32, @as(u32, @bitCast(@as(f32, @floatCast(self.accelerator.clip_min)))), .little);
         try writer.writeInt(u32, @as(u32, @bitCast(@as(f32, @floatCast(self.accelerator.clip_max)))), .little);
 
-        try buffered_writer.flush();
-        try file.sync();
+        const trailer_crc = rsf_pheap.security.Crc32.computeBytes(payload.items);
+        try writer.writeInt(u32, trailer_crc, .little);
 
-        std.debug.print("Checkpoint saved to {s} at step {d}\n", .{ path, self.global_step });
+        const result = try store_ptr.save(payload.items);
+        std.debug.print(
+            "Checkpoint saved to {s} at step {d} (bytes={d}, crc=0x{x:0>8}, wal_seq={?d}, cluster_records={d}, cluster_bytes={d}, ranks_present={d}/{d})\n",
+            .{
+                path,
+                self.global_step,
+                result.bytes_written,
+                result.crc32,
+                result.snapshot_marker_sequence,
+                cluster_report.total_records,
+                cluster_report.bytes_written,
+                cluster_report.ranks_present,
+                cluster_report.ranks_processed,
+            },
+        );
     }
 
     pub fn loadCheckpoint(self: *DistributedTrainerFuthark, path: []const u8) !void {
-        const file = std.fs.openFileAbsolute(path, .{ .mode = .read_only }) catch |err| {
-            std.debug.print("Failed to open checkpoint file: {}\n", .{err});
-            return err;
-        };
-        defer file.close();
+        try self.enablePersistence(path);
+        const store_ptr = if (self.store) |*s| s else return error.PersistenceNotEnabled;
 
-        var reader = file.reader();
+        const repair_report = store_ptr.repairCheckpoint() catch |err| switch (err) {
+            error.NothingToDo => null,
+            else => null,
+        };
+        if (repair_report) |rep| {
+            if (rep.repaired_from_backup) {
+                std.debug.print(
+                    "[Rank {d}] Checkpoint repaired from backup: primary_valid={} backup_valid={}\n",
+                    .{ self.coordinator.rank, rep.primary_valid, rep.backup_valid },
+                );
+            }
+        }
+
+        var loaded = try store_ptr.load();
+        defer loaded.deinit(self.allocator);
+
+        if (loaded.payload.len < 36 + 4) return error.CheckpointTooShort;
+        const trailer_offset = loaded.payload.len - 4;
+        const stored_trailer = std.mem.readIntLittle(u32, loaded.payload[trailer_offset..][0..4]);
+        const computed_trailer = rsf_pheap.security.Crc32.computeBytes(loaded.payload[0..trailer_offset]);
+        if (stored_trailer != computed_trailer) return error.CheckpointTrailerCrcMismatch;
+
+        var stream = std.io.fixedBufferStream(loaded.payload[0..trailer_offset]);
+        var reader = stream.reader();
 
         const version = try reader.readInt(u32, .little);
         if (version != self.config.checkpoint_version) {
@@ -587,7 +756,6 @@ pub const DistributedTrainerFuthark = struct {
         const weight_count = try std.math.mul(usize, self.model_dim, self.model_dim);
         const s_weights = try self.allocator.alloc(f16, weight_count);
         defer self.allocator.free(s_weights);
-
         for (s_weights) |*w| {
             const bits = try reader.readInt(u32, .little);
             const f32_val: f32 = @bitCast(bits);
@@ -596,7 +764,6 @@ pub const DistributedTrainerFuthark = struct {
 
         const t_weights = try self.allocator.alloc(f16, weight_count);
         defer self.allocator.free(t_weights);
-
         for (t_weights) |*w| {
             const bits = try reader.readInt(u32, .little);
             const f32_val: f32 = @bitCast(bits);
@@ -608,7 +775,6 @@ pub const DistributedTrainerFuthark = struct {
 
         const s_bias_data = try self.allocator.alloc(f16, self.model_dim);
         defer self.allocator.free(s_bias_data);
-
         for (s_bias_data) |*b| {
             const bits = try reader.readInt(u32, .little);
             const f32_val: f32 = @bitCast(bits);
@@ -617,7 +783,6 @@ pub const DistributedTrainerFuthark = struct {
 
         const t_bias_data = try self.allocator.alloc(f16, self.model_dim);
         defer self.allocator.free(t_bias_data);
-
         for (t_bias_data) |*b| {
             const bits = try reader.readInt(u32, .little);
             const f32_val: f32 = @bitCast(bits);
@@ -635,6 +800,9 @@ pub const DistributedTrainerFuthark = struct {
 
         try self.accelerator.sync();
 
-        std.debug.print("Checkpoint loaded from {s} at step {d}\n", .{ path, self.global_step });
+        std.debug.print(
+            "[Rank {d}] Checkpoint loaded from {s} at step {d} (bytes={d}, used_backup={}, crc=0x{x:0>8})\n",
+            .{ self.coordinator.rank, path, self.global_step, loaded.bytes, loaded.used_backup, loaded.crc32 },
+        );
     }
 };

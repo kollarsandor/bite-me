@@ -1167,7 +1167,7 @@ fn syncAllLayersGPU(core: *RSFCore) !void {
     var local_f16 = try core.allocator.alloc(f16, dim_sq);
     errdefer core.allocator.free(local_f16);
 
-    var staged_accel = accel.RSFAccelerator.init(core.dim) catch return error.NoGPUAvailable;
+    var staged_accel = accel.RSFAccelerator.init(core.dim, 0) catch return error.NoGPUAvailable;
     errdefer staged_accel.deinit();
 
     var i: usize = 0;

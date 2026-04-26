@@ -29,11 +29,12 @@ pub const FutharkContext = struct {
 
     const Self = @This();
 
-    pub fn init() AccelError!Self {
+    pub fn init(device_id: i32) AccelError!Self {
+        if (device_id < 0) return AccelError.InvalidDimensions;
         const cfg = futhark.futhark_context_config_new();
         if (cfg == null) return AccelError.FutharkConfigFailed;
 
-        futhark.futhark_context_config_set_device(cfg, 0);
+        futhark.futhark_context_config_set_device(cfg, device_id);
         futhark.futhark_context_config_set_default_group_size(cfg, 256);
         futhark.futhark_context_config_set_default_num_groups(cfg, 128);
         futhark.futhark_context_config_set_default_tile_size(cfg, 32);
@@ -429,10 +430,11 @@ pub const RSFAccelerator = struct {
 
     const Self = @This();
 
-    pub fn init(model_dim: usize) AccelError!Self {
+    pub fn init(model_dim: usize, device_id: i32) AccelError!Self {
         if (model_dim == 0) return AccelError.InvalidDimensions;
+        if (device_id < 0) return AccelError.InvalidDimensions;
 
-        var ctx = try FutharkContext.init();
+        var ctx = try FutharkContext.init(device_id);
         errdefer ctx.deinit();
 
         var weights_s = try FutharkArray2DF16.newZeros(&ctx, model_dim, model_dim);
@@ -778,8 +780,8 @@ pub const GPUOps = struct {
 
     const Self = @This();
 
-    pub fn init() AccelError!Self {
-        return Self{ .ctx = try FutharkContext.init() };
+    pub fn init(device_id: i32) AccelError!Self {
+        return Self{ .ctx = try FutharkContext.init(device_id) };
     }
 
     pub fn deinit(self: *Self) void {
