@@ -1,7 +1,5 @@
 # Reversible Scatter Flow (RSF) – Teljes Dokumentáció
 
-## Az Ötödik Gyökérszintű Architektúra: Új Paradigma a Mélytanulásban
-
 ---
 
 ## I. RÉSZ: Elméleti Alapok és Architekturális Értékelés
