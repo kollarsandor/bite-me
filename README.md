@@ -1,240 +1,374 @@
-Reversible Scatter Flow (RSF) az ötödik fundamentális gyökér-architektúra, amely a Curry-Howard izomorfizmus elveit átemelve magát a neurális hálózatot teszi egy matematikailag levezetett, fordítószinten garantált tétellé.
+# Reversible Scatter Flow (RSF) – Dokumentáció
 
-Az RSF három radikális mérnöki pilléren nyugszik:
+---
 
-Puritán, Sub-hálózat Nélküli Bijekció: Teljesen eltávolítottam a hagyományos csatolási rétegek (pl. NICE, RealNVP) belső MLP-jét. A transzformáció egyetlen nyers mátrixszorzásra redukálódott.
+## Áttekintés
 
-O(1) Memória-Visszaterjesztés: A tökéletes matematikai invertálhatóság miatt a forward pass aktivációit nem kell eltárolni. A hálózat korlátlan mélységig skálázható GPU memória-túlcsordulás nélkül.
+A Reversible Scatter Flow (RSF) projekt egy nagy teljesítményű neurális hálózati keretrendszer, amely végtelen mélységű skálázhatóságra és matematikai bizonyosságra tervezett. A hagyományos architektúrákkal ellentétben az RSF szigorúan bijektív transzformációkat és O(1) memória-visszaterjesztést használ, megszüntetve az aktivációk tárolásának szükségességét az előremeneti menet során.
 
-Determinisztikus Információáramlás: A dinamikus figyelem-mátrixok helyett egy fix, 1/sqrt(2) skálázású fraktál-scatter mechanizmus (OFTB) garantálja a veszteségmentes, globális kontextus-keverést.
+A rendszer három radikális mérnöki pilléren épül:
 
-2. A Matematikai Mag: Az Affin Csatolás és a Scatter
-Az RSF minden rétege egy szigorúan bijektív (egy-az-egyhez és szürjektív) transzformáció. A bemeneti tenzor két egyenlő félre (x1, x2) van osztva.
+1. **Puritaán Bijekció:** Az MLP-k eltávolítása a kapcsolási rétegekből, hogy a transzformációkat nyers mátrixműveletekre redukálja
+2. **O(1) Memória-visszterjesztés:** A tökéletes matematikai invertálhatóság lehetővé teszi a hálózat számára, hogy tetszőleges mélységig skálázódjon GPU memória túlcsordulás nélkül
+3. **Determinisztikus Információáramlás:** Globális kontextus-keverés az Ortogonális Fraktáltranszformációs Blokkon (OFTB) keresztül, egy rögzített skálájú fraktál-szórási mechanizmus
 
-A Csatolási Művelet (Forward Pass)
-A számítás mentes minden felesleges nem-linearitástól (nincs ReLU, nincs GeLU). A transzformáció kizárólag affin leképezésekre épül:
+---
 
-Skálaszámítás: scale = exp(clip(W_s * x2 + b_s))
+## Rendszerarchitektúra
 
-Eltolásszámítás: trans = W_t * y1 + b_t
+Az RSF kódbázis négy különálló rétegbe van strukturálva, amelyek összekötik az alacsony szintű teljesítményt a magas szintű formális verifikációval.
 
-Alkalmazás: y1 = x1 * scale, y2 = x2 + trans
+### Mag Logika és Futásidejű Rendszer
 
-A clip függvény szigorú határok között (alapértelmezetten [-5.0, 5.0]) tartja a skálázást, garantálva a numerikus stabilitást és megelőzve a gradiens robbanást.
+Az elsődleges futásidejű rendszer Zig-ben van implementálva, a memóriabiztonságra és az explicit allokációra összpontosítva. Az `rsf.zig` modul definiálja az alap RSF és RSFLayer struktúrákat, kezelve az affin kapcsolási műveleteket. Ezt támogatja a **pheap**, egy gyártási minőségű al-projekt, amely tartósságot, tranzakciókat és C interop réteget biztosít.
 
-A Pontos Megfordítás (Inverse Pass)
-A hálózat visszafelé futtatása nem igényli a súlymátrixok invertálását (ami O(N^3) lenne). A művelet algebrailag tökéletesen szimmetrikus:
+### Hardvergyorsítás
 
-x2 = y2 - (W_t * y1 + b_t)
+A nehéz számítási terhek kezeléséhez az RSF integrálódik a **Futhark**-kal a kernel generáláshoz és a **CUDA**-val a közvetlen GPU végrehajtáshoz. Az RSFAccelerator felület absztrahálja ezeket a backendeket, lehetővé téve a zökkenőmentes váltást a CPU tartalék és a nagy teljesítményű GPU utak között.
 
-scale = exp(clip(W_s * x2 + b_s))
+### Elosztott Tanítás
 
-x1 = y1 / scale
+A nagyszabású tanítást a `DistributedTrainerFuthark` teszi lehetővé, amely NCCL-t használ a kollektív kommunikációhoz (all-reduce) és Modal-t a felhőalapú GPU orkesztrációhoz.
 
-Az OFTB (Orthogonal Fractal Transform Block) Scatter:
-Hogy a "dead channel" problémát elkerüljük, a csatolási rétegek között egy determinisztikus pillangó-keverés (butterfly mixing) fut le. Ez a Haar-transzformációhoz hasonló művelet 1/sqrt(2) (0.70710678) skálafaktorral keveri a dimenziókat, megőrizve a jel energiáját és biztosítva a globális információáramlást.
-
-3. A Formális Bizonyítás:
-Az RSF mélytanulási architektúrája, négy független tételbizonyító rendszer (Lean 4, Beluga, Mizar, Twelf) igazolt le. a gradiens eltűnésének hiánya, a szimmetria és a memóriabiztonság logikai axiómák.
-
-A kódbázisban található rfs.lean fájl pontosan 213 darab formális bizonyítást tartalmaz, amelyek a Zig futtatókörnyezet és a matematikai modell teljes egyezését garantálják. Ezek a következőképpen oszlanak meg:
-
-Tenzor operációk és Forward/Inverse Pass verifikáció (25 db): A mélytanulási rétegek (Forward In-Place, Inverse, Split, Merge, ZipWith) egzakt működését bizonyító mag (pl. forwardInPlace2D_output_rows, forwardRow2D_then_inverseRow2D_identity, spec_forwardInPlace_correct).
-
-Természetes számok aritmetikája (34 db): Biztonságos matematikai műveleteket és összehasonlításokat verifikáló tételek (pl. natAdd_comm, natLeB_trans).
+### Formális Verifikáció
 
-Fixpontos számítások / FixedQ (23 db): A neurális háló súlyait és számításait reprezentáló 32.32-es fixpontos struktúra matematikai garanciái (pl. FixedQ.mul_comm, FixedQ.clipQ_min_when_lt).
-
-Hibakezelés és ResultT monád (23 db): A Zig-es hibák és eredmények leképezését végző Lean típushoz kötődő monádikus tulajdonságok.
+Az RSF egyedülálló aspektusa a **„Négy-Bizonyító" csővezeték**. A rendszert Lean 4, Beluga, Mizar és Twelf verifikálja a matematikai tulajdonságok garantálására, mint például az invertálhatóság, memóriabiztonság (nincs Használat-Szabadítás-Után) és szerkezeti szimmetria.
 
-Boole algebra (22 db): Alapvető logikai operációk disztributív, asszociatív és kommutatív szabályai.
-
-Tenzor formák és adatok (18 db): Tenzorok dimenzióit, inicalizálását és a memóriában elfoglalt alakját ellenőrző tételek.
+---
 
-Memóriakezelés, aliasolás és Heap (16 db): Tensor adatterületek átfedését (aliasing) tiltó funkciók (pl. tensorsOverlap_false_implies_disjoint) és alapvető memóriairás/olvasás.
+## Projektstruktúra és Navigáció
 
-Párhuzamosság (Mutex, RwLock, Atomics) (15 db): Exkluzív és megosztott zárak, valamint atomi operációk robusztusságának igazolása (pl. MutexState.lock_unlock_roundtrip).
+| Modul | Cél | Kulcsfontosságú Fájlok |
+|---|---|---|
+| Mag | Az RSF és OFTB Zig implementációja | `rsf.zig`, `oftb.zig` |
+| pheap | Tartós halom és C-kompatibilis futásidejű rendszer | `pheap/c/pheap.zig`, `pheap/src/gc.zig` |
+| Hardver | GPU kernelek és CUDA FFI | `accel/accel_interface.zig`, `accel/cuda_bindings.zig` |
+| Elosztott | Több GPU-s és felhőalapú tanítás | `distributed/distributed_trainer_futhark.zig` |
+| Verifikáció | Formális bizonyítások (Lean, Beluga stb.) | `rsf.lean`, `rsf.bel`, `rsf.miz` |
 
-Biztonságos műveletek (Checked Math) (13 db): A Zig-kód checkedMul és checkedAdd iterációinak túlcsordulás elleni védelme.
+---
 
-Validáció és konfiguráció (12 db): Tenzor méretek, toleranciák és "clip" értékek verifikálása.
+## 1. fejezet – Kezdő Lépések és Építési Rendszer
 
-Modell és Réteg inicializálás (9 db): Konfigurációs értékek validációja és rétegek generálási garanciái.
+Ez a fejezet a fejlesztői környezet beállítását, a Nix-alapú függőségkezelést és az Zig építési rendszer konfigurációját ismerteti.
 
-Fájlrendszer műveletek (3 db): Biztonságos atomi fájlírás igazolása.
+### Fejlesztői Környezet és Függőségek
 
-A Mizar a halmazelméleti specifikációkat és a bináris sorosítást, a Twelf a strukturális invertálhatóságot és a párhuzamos memória modellt, míg a Beluga az alakmegőrzést és a Use-After-Free hibák hiányát (Registry Safety) garantálja.
-A Rendszerprogramozás és a Logikai Keretrendszerek (LF) Kapcsolata
-A modern szoftverfejlesztésben a teljesítmény és a biztonság közötti kompromisszum feloldása állandó feszültséget generál. A Zig nyelv, bár a C nyelv modern, biztonságosabb és sokkal kifejezőbb alternatívájaként jött létre, szándékosan mellőzi a Rust-hoz hasonló, fordítási időben lefutó kölcsönzés-ellenőrzőt (borrow checker). A Zig filozófiája szerint a memóriafoglalásnak (allocation) explicitté kell válnia, és a fejlesztő teljes kontrollt kap az allokátorok és a memóriablokkok élettartama felett. Egy olyan összetett tartományban azonban, mint a neurális hálózatok dinamikus memóriagráfjainak (computational graphs) kezelése, ez a szabadság az emberi hiba kockázatát exponenciálisan megnöveli.
-Ezt a sebezhetőséget hidakat át a Beluga keretrendszer. A Beluga egy interaktív bizonyítástámogató és programozási nyelv, amely a Higher-Order Abstract Syntax (HOAS) és a kontextuális modális típuselmélet (Contextual Modal Type Theory) elveire épül. Lehetővé teszi, hogy a szoftvermérnökök egy külső, szigorúan formális logikai modellt építsenek a Zig kód mellé. A Curry-Howard izomorfizmus értelmében a típusok logikai állításoknak (tételeknek), a programok (konstruktorok) pedig ezen tételek bizonyításainak felelnek meg.
-Az rsf.bel fájl architektúrája ezen elv mentén két jól elkülöníthető hierarchiai szintre bontható:
-1.	A Logikai Keretrendszer (LF) Definíciói: Ez a réteg felelős a játékszabályok, vagyis a specifikáció felállításáért. Itt definiálják az alapvető adattípusokat (számok, logikai értékek) és azokat a relációkat, amelyeknek a program állapotai között fenn kell állniuk. Az LF rétegben 23 ilyen típus található.
-2.	Az Induktív Számítási Tanúk (Bizonyítások): Ezek a tényleges verifikációs elemek. Az inductive típusok biztosítják az algoritmikus bizonyítékát annak, hogy az LF rétegben megfogalmazott szabályok a Zig kód futása során minden körülmények között tiszteletben vannak tartva. Ebből található pontosan 32 darab a kódbázisban.
-Amikor a Zig kód például lekér egy memóriaterületet, vagy végrehajt egy transzpozíciót egy mátrixon, a megfelelő induktív Beluga-bizonyítás jelenléte garantálja a fordító számára, hogy a művelet mentes a memóriaszivárgástól (memory leak) vagy a puffertúlcsordulástól (buffer overflow).
-Az Ontológiai Alapok: A 23 LF (Logical Framework) Típus Analízise
-Mielőtt egy matematikai keretrendszer bizonyításokat tudna generálni, deklarálnia kell azokat a fundamentális entitásokat és viszonyrendszereket, amelyek felett az ítéletalkotás történik. Az rsf.bel dokumentumban 23 ilyen alapvető specifikációs típust találunk, amelyek a LF kulcsszóval kerültek bevezetésre. Ezek nem végrehajtható eljárások, hanem olyan típuscsaládok, amelyek meghatározzák az univerzum törvényeit a Zig memória- és tenzorkezelő számára.
-Az átláthatóság érdekében ezen alaptípusokat három funkcionális kategóriába rendeztük: Alapvető Aritmetika és Primitívek, Rendszerállapot és Memóriakezelés, valamint Tenzor és Gép Tanulási Specifikációk.
-Alapvető Aritmetika és Primitív Adattípusok
-A legalsó absztrakciós rétegen a memória indexelése és a dimenziók kiszámítása tisztán matematikai probléma. A keretrendszer a számítógépes hardver 64-bites regiszterei helyett a természetes számok végtelen pontosságú Peano-féle reprezentációját alkalmazza a logikai érvelésben.
-LF Típus Név	Típus Szignatúra / Konstruktorok	Rendszerszintű Logikai Funkció
-nat	z (nulla), s (rákövetkező)	A Peano-féle természetes számok definíciója. A memóriacímek, méretek és referenciák alapja.
-bool	btrue, bfalse	Standard logikai állítások reprezentációja. Kulcsszerepe van a memóriablokkok haldokló (dying) állapotának jelzésében.
-add	nat -> nat -> nat -> type	Az összeadás relációs modellje: M + N = P. A memóriacímek eltolásának (offsetting) és a dimenziók összegzésének alapja.
-mul	nat -> nat -> nat -> type	A szorzás relációs modellje: M \times N = P. Dimenziók kiterítéséhez (flattening) és a mátrixok adatainak folytonos memóriában való elhelyezéséhez kritikus.
-leq	nat -> nat -> type	A kisebb-egyenlő (A \le B) reláció, amely az intervallumok és a szeletelési (slice) műveletek felső határainak validálására szolgál.
-lt	nat -> nat -> type	A szigorú kisebbség (A < B) relációja. Ez az exkluzív memóriabiztonság garanciája: egy pointer soha nem mutathat a lefoglalt terület utáni első bájtig sem a beolvasáskor.
-eq-nat	nat -> nat -> type	Két Peano-szám strukturális egyenlősége. Az optimalizáló fordítók számára teszi lehetővé a redundáns allokációk felismerését.
-f32val	mk-f32	Valós adatreprezentáció. Míg az indexelés nat felett történik, ez a típus a konkrét 32-bites lebegőpontos tenzorértékeket szimbolizálja a modellben.
-checkedmul-result	cmr-ok, cmr-overflow	Kifejezetten a hardveres túlcsordulások leképezése. Vélhetően a Zig @mulWithOverflow beépített függvényének logikai másolata, amely detektálja az architektúrális limiteket.
-A Peano-aritmetika (ahol a 3 úgy jelenik meg, mint s (s (s z))) elsőre komputációs szempontból lassúnak tűnhet, azonban fontos megérteni, hogy ezek a műveletek csak a fordítási és bizonyítási fázisban léteznek. Amikor a Beluga típusellenőrző lefut, felépíti ezeket a struktúrákat, és ha a bizonyítás sikeres, a Zig fordító már a natív, egyetlen órajelciklus alatt lefutó hardveres ADD vagy MUL utasításokat fogja a végső binárisba generálni, a határellenőrzési ugrások elhagyásával.
-Rendszerállapot és Erőforrás-életciklus
-A HPC szoftverek manuális memóriakezelésének formalizálása az állapotgépekre (state machines) támaszkodik. A Zig kódbázis egy komplex hivatkozásszámláló (reference counting) architektúrát használ, amelyet az LF a következő típusokkal modellez:
-LF Típus Név	Állapotok / Konstruktorok	Rendszerszintű Logikai Funkció
-reg-state	reg-alive, reg-freed	Egy memóriablokk vagy dedikált hardveres regiszter globális létállapota. Az élő állapot magában foglal egy referenciát számoló nat értéket és egy "haldokló" (dying) bool jelölőt.
-transition	tr-acquire, tr-release-live, tr-destroy-live, stb.	Az állapottér átmeneti szabályrendszere. Kifejezi, hogy a rendszer miként reagálhat egy foglalási vagy felszabadítási eseményre anélkül, hogy a globális integritás sérülne.
-reachable	Tranzitív lezárás típus	Egy gráf-elméleti eszköz, amely bizonyítja, hogy a reg-state állapottérben lehetséges-e (és hogyan) eljutni az A állapotból a B állapotba véges számú szabályos transition lépéssel.
-is-acquirable	acquirable-alive	Egy feltételrendszer, amely eldönti, hogy a jelenlegi reg-state esetén engedélyezett-e a referencia növelése.
-is-core-valid	cv-alive-false, cv-alive-true	Strukturális ellenőrző típus, amely kizárja az "impossible states" (lehetetlen állapotok) fennállását az élő memóriában, pl. negatív referencia.
-Ez az állapotgép kivételesen kifinomult aszinkron tervezési mintára utal a Zig kódban. Ahelyett, hogy egy referenciszám nullára csökkenése azonnal szinkron deallokációt hívna meg (ami a neurális hálózatok GPU/TPU offloadingja esetén katasztrofális blokkolást okozna), a rendszer bevezetett egy bool "dying" flag-et. Ha a kód meghívja a pusztítást (tr-destroy-live), a blokk élve marad a memóriában mindaddig, amíg a folyamatban lévő aszinkron olvasások be nem fejeződnek (a referenciák nullára csökkennek), de új folyamat már nem "foglalhatja" le (nem is-acquirable). Ezen folyamatok formális rögzítése kritikus az adatszerkezetek szálbiztos (thread-safe) működéséhez.
-Tenzor- Validációk és Gépi Tanulási Specifikációk
-A mesterséges intelligencia modellek alapját képező tenzorok verifikációja teszi ki az LF definíciók legmagasabb szintjét. A neurális hálózatok során a dimenziók folytonos átalakuláson (reshape, split, merge) esnek át.
-LF Típus Név	Típus Szignatúra / Jellemzők	Rendszerszintű Logikai Funkció
-tensor-valid	nat -> nat -> nat -> type	Egy R (sor) és C (oszlop) kiterjedésű mátrixról állítja, hogy annak teljes lapított mérete (Total) matematikailag megegyezik a szorzatukkal (mul R C Total).
-index-in-bounds	5 paraméteres LF reláció	Biztosítja a Zig többdimenziós tömb-lekérdezéseinek C-szintű biztonságát: a kiszámított 1D index (Idx = B \times Cols + D) garantáltan kisebb, mint a Total.
-split-valid	dimenzionális egyenlőségek	Amikor egy komplex dimenziót (TwoD) két részre (pl. Half és Half) osztunk, igazolja az elméleti szorzási arányok folytonosságát (pl. Dim + Dim = TwoD).
-merge-valid	dimenzionális inverz műveletek	A felbontott hálózati rétegek vagy tenzorok ismételt összefűzésekor a határok és a memóriaigény változatlanságának deklarációja.
-layer-shape-inv	nat -> nat -> nat -> nat -> type	Neurális hálózati specifikus invariáns: definiálja a négyzetes (Dim \times Dim = DimSq) rétegek alak-konzisztenciáját.
-grad-shape-inv	nat -> nat -> nat -> nat -> type	Gradiens-invariáns a backpropagation algoritmushoz: biztosítja, hogy a hiba-derivatívák pontosan ráilleszthetők legyenek az eredeti súlyok tenzoraira.
-model-shape-inv	5 paraméteres dimenzió-invariáns	Teljes gépi tanulási modellek batch méretének és dimenziós ágacskáinak (Batch, Dim, TwoD, Full, Half) összefüggéseit kényszerítő axiomatikus keret.
-backward-valid	4 paraméteres reláció	Kifejezetten a visszafelé futó operációk adatfolyamának memóriabiztonsági deklarációja.
-slice-valid	nat -> nat -> nat -> type	Egy specifikus pointer-manipuláció: a Zig natív memóriaszeleteinek (T) reprezentációja, ahol garantált, hogy a kezdőcím és a hossz összege nem haladja meg az allokált blokk végét (Start + Len = End \le Total).
-Ezek a szabályok biztosítják a típuselméleti fundamentumot. Az elméleti kontextus megteremtése után a Beluga programozónak már "csak" bizonyítékokat (induktív struktúrákat) kell gyártania ezekhez az LF definíciókhoz a valós végrehajtási ágak lefedésére. Ahogy azt az alapos számszerű analízis megmutatta, pontosan 32 ilyen bizonyíték készült el, melyek felbontása rendkívüli mérnöki teljesítményt takar.
-A Zig Memóriakezelés Közvetlen Bizonyításai (A 4 Fő Tétel)
-Ahogy azt az analízis elején megállapítottuk, az 32 induktív tanúból 4 bizonyítás dedikáltan a Zig nyelv sajátosságaira, a referenciaszámlálós manuális memóriakezelés formalizálására irányul. A Rust memóriabiztonsága a statikus életciklus-szabályokon alapszik, amelyek feszélyezhetik a komplex gráf-alapú adatszerkezetek (mint az MI modellek) építését. A Beluga keretrendszer használata a Zig-hez azt a célt szolgálja, hogy a szoftver egyedi, aszinkron referenciaszámlálót valósítson meg úgy, hogy annak biztonsága matematikailag ugyanolyan stabil legyen, mint egy automatikusan ellenőrzött nyelvé.
-A 4 bizonyítás az alábbi rendkívül koherens memóriamodellt fedi le :
-1.	RegistryAcquireW (Az Erőforrás Lefoglalásának Bizonyítéka): Ez az induktív típus formalizálja és validálja a rendszer tr-acquire tranzícióját. Paraméterként felvesz egy {N : [|- nat]} természetes számot, ami az aktuális referenciák számát jelöli. A bizonyítás algoritmikusan garantálja a fordítónak, hogy amennyiben egy erőforrás reg-alive állapotban van, és a "haldokló" (dying) állapotjelző flagje negatív (bfalse), a referenciaszámláló biztonságosan megnövelhető. A Peano-rendszerben ez azt jelenti, hogy az 
+A projekt **Nix**-et használ a reprodukálható fejlesztői környezet biztosítására különböző gépek között. A környezet a `replit.nix`-en keresztül van konfigurálva.
 
- érték s(N)-re (annak rákövetkezőjére) változik. Ez az egyszerűnek tűnő logikai lépés óriási védelmet nyújt: megakadályozza a szálak közötti versenyhelyzetből fakadó fantom-allokációkat, biztosítva, hogy egy destrukció alatt álló blokk soha többé nem kerülhet be az aktív memóriamedencébe (memory pool).
-2.	RegistryReleaseW (A Kölcsönzés Biztonságos Elengedése): Amikor egy végrehajtási szál befejezi a tenzorműveleteket, el kell engednie a memóriát. A RegistryReleaseW induktív tanú a tr-release-live állapotátmenetet igazolja. Bizonyítja, hogy ha egy élő (bfalse dying bitű) terület referenciaszáma 
+| Függőség | Cél |
+|---|---|
+| `pkgs.zig` | Elsődleges fordító és építési eszköz az RSF futásidejű rendszerhez |
+| `pkgs.gcc` | Szükséges a C-alapú Futhark kernelek fordításához és összekapcsolásához |
+| `pkgs.futhark` | Nagy teljesítményű funkcionális adatpárhuzamos nyelv GPU kernelekhez |
+| `pkgs.gnumake` | Építési segédeszköz kiegészítő feladatokhoz |
+| `pkgs.pkg-config` | Segédprogram a rendszerkönyvtárak megtalálásához az építési folyamat során |
 
- állapotban van (azaz szigorúan nagyobb nullánál), az elengedési folyamat sikeresen leredukálja azt 
+A környezet egy globális gyorsítótár-könyvtárat is definiál a Zig számára a jogosultsági problémák megelőzésére:
+```
+ZIG_GLOBAL_CACHE_DIR = "/tmp/zig-cache"
+```
 
--re. A típusrendszer itt kényszeríti ki a Zig kódból, hogy a dekrementálás soha ne okozhasson integer alulcsordulást (underflow), és a memória ne kerüljön a operációs rendszer felé felszabadításra addig, amíg akár egyetlen olvasó szál is létezik.
-3.	RegistryDestroyW (A Megsemmisítés Szinkronizációja): A HPC rendszerekben a felszabadítás szétválik a törléstől. A megsemmisítést kérő hívás (tr-destroy-live) során a RegistryDestroyW típus bizonyítja, hogy az élő memóriablokk állapota legálisan válthat át a btrue haldokló állapotra. Innentől kezdve a RegistryAcquireW axiómája strukturálisan alkalmazhatatlanná válik erre a regiszterre a típusellenőrző számára. Ez a logikai szegregáció a záloga annak, hogy a Zig kód mentes a "Use-After-Free" (UAF - felszabadítás utáni használat) sérülékenységtől, ami az alacsony szintű rendszerek egyik legkritikusabb biztonsági rése.
-4.	EventualCleanupW (Az Esetleges Tisztítás és Liveness Garancia): Míg az előző három tanú a biztonsági (safety) tulajdonságokat védi – azt, hogy soha ne történjen rossz dolog –, addig ez az utolsó, negyedik specifikus bizonyítás egy úgynevezett élőségi (liveness) tulajdonságért felel: azért, hogy a jó dolog garantáltan megtörténjen. A memóriaszivárgások (memory leaks) megelőzésére az EventualCleanupW az LF reachable (elérhető) tranzitív lezárását használja. Matematikailag igazolja, hogy ha egy memóriablokk btrue (haldokló) fázisba lépett, akkor minden lehetséges végrehajtási ágon (függetlenül a még hátralévő tr-release-dying kioldásoktól) garantáltan, véges számú lépésben el fogja érni a végső, terminális reg-freed állapotot, ahol a memória fizikailag visszaadásra kerül a rendszer számára. Ez a bizonyítás önmagában egy komplett "Garbage Collector" logikáját formalizálja a manuális memóriakezelésen belül.
-A tény, hogy a fenti folyamatokra egyedileg kidolgozott induktív típusok és kontextuális változók épültek a Beluga fájlban, ékes bizonyítéka a forrásfájl célirányos, egyedülálló rendszerszintű fókuszának. Azonban mindez az építmény hamar összedőlne a komplex tenzorműveletek alatt, ha nem léteznének dedikált bizonyítások a memóriaterületek fizikai bejárására is.
-Térbeli Memóriabiztonság és Tenzorstruktúra-Verifikáció (8 Bizonyítás)
-Mivel a cél hardver (CPU regiszterek, RAM, L1/L2 cache) alapvetően lineáris (egydimenziós) struktúra, minden többdimenziós MI neurális modellt lapítani (flatten) kell a futtatás során. Egy egyszerű 3D-s tenzor indexelése sorok, oszlopok és mélység alapján komplex szorzásokat és összeadásokat von maga után. A legkisebb aritmetikai tévedés a Zig kódban egy mutatót a lefoglalt címtér határain túlra vihet. Ennek kivédésére az rsf.bel kódbázis további 8 induktív bizonyítást léptet életbe, melyek a memóriahatárok betartását szavatolják :
-1.	IndexBoundW (A Multidimenzionális Túlcsordulás Biztonsága): Ez a számítási tanú a térbeli biztonság koronaékszere. A típus négy független dimenziót vesz fel paraméterként: {B : [|- nat]} {D : [|- nat]} {Rows : [|- nat]} {Cols : [|- nat]}. Amikor a Zig kód hozzáfér egy tenzor egy konkrét eleméhez, a fordítónak fel kell mutatnia egy validált IndexBoundW példányt. A tanú konstruktora magában foglalja egy {Total : [|- nat]} változó kiszámítását (mul Rows Cols Total), egy lineáris index {Idx : [|- nat]} determinálását, és végül – a legfontosabb – egy bizonyítást arra nézve, hogy fennáll a lt Idx Total (azaz Index szigorúan kisebb, mint a Total) egyenlőtlenség. Ez a bizonyítás statikusan, a kód lefordulása előtt kigyomlál minden olyan tenzorműveletet, amely hardveres memória-hozzáférési hibát (Segmentation Fault) okozhatna.
-2.	SplitIndexFirstW és 7. SplitIndexSecondW (Tenzorok Destrukturálása): A mélytanulási modellek (pl. transzformerek attention rétegei) masszív mértékben osztanak szét (split) tenzorokat. Amikor egy komplex dimenziót, mondjuk egy TwoD méretűt felbontunk Half és Full komponensekre (Dim + Dim = TwoD), az iterációs indexek referenciája gyökeresen átalakul. Ezek az induktív tanúk igazolják, hogy a felosztott műveletek indexei továbbra is beékelődnek az új határok közé. A konstruktor specifikusan megköveteli egy [|- lt Idx Full] formalizált axióma felmutatását. E nélkül a Zig kód szálai felülírhatnák egymás adatait a felosztás során.
-3.	MergeIndexW, 9. MergeOutputIndexW és 10. MergeOutputSecondIndexW (Adatfolyam-Integritás Konkatenációkor): A felosztott tenzorok ismételt egyesítésekor a memória ugrásainak aritmetikája megfordul. Ez a három bizonyítási típus felel azért a logikai folytonosságért, amely biztosítja, hogy az egyesítő ciklusok és a másolt blokkok indexei nem nyúlnak túl a féldimenziós (lt Idx Half) és a teljes dimenziós (lt Idx Full) memóriacímeken. A három független tanú jól mutatja a merge művelet fázisait a Zig implementációban: bemeneti indexelés, az első blokk kimeneti indexelése, és a második blokk kimeneti transzlációja.
-4.	ForwardShapeW és 12. InverseShapeW (Makro-szintű Alakzat-Validáció): Míg az előző tanúk a mikroszintű indexeket biztosították, ezek a típusok egy magasabb absztrakciót képeznek a tenzor fizikai jelenléte felett a memóriában. A ForwardShapeW három változót kezel ({R : [|- nat]} {C : [|- nat]} {Total : [|- nat]}), és kényszeríti az előrecsatolási iterációkat (forward propagation), hogy igazolják a tensor-valid állítást a kimeneti bufferekre vonatkozóan. Az InverseShapeW, amely a rendelkezésre álló forrástöredék legutolsó dokumentált sora, ugyanezt a struktúrát várja el inverz operációk, azaz a backpropagation során, garantálva, hogy a hiba-gradiens tenzorok struktúrája izomorf az eredeti modellel.
-Ezen induktív tanúk alkalmazása páratlan mértékű optimalizációt enged meg a Zig fordító számára. A klasszikus Bounds Checking (határellenőrzés) kiiktatása minden cikluslépésből olyan teljesítménynövekedést biztosít, amely a legalacsonyabb szintű, kézzel írt Assembly kóddal vetekszik, mindezt a C nyelvvel asszociált sérülékenységi kockázatok teljes elkerülése mellett.
-Peano-Axiomatika és Algebrai Monotonitás (A 20 Alapozó Bizonyítás)
-A formális logikában nem lehet "csak úgy" bizonyítani, hogy egy index kisebb egy adott memóriaméretnél. Az automatizált bizonyítómotornak és a Beluga típusellenőrzőnek szüksége van az univerzum alapvető geometriájának és algebrájának szabályaira, hogy levezesse a térbeli határok korrektségét a korábban definiált LF relációkból. A hiányzó építőelemeket, a bizonyítási rendszer fundamentumát a fennmaradó 20 induktív tanú alkotja az rsf.bel fájlban. Ezek mind a Peano-aritmetika (ahol számokat csak 0-ból és az azt követő értékekből építünk fel) logikai reprezentációjának kiterjesztései.
-Operációs Burkolók és Egyenlőségi Determinizmus
-1.	AddW: Egy fundamentális, paraméterezett ctype burkoló, amely az {M : [|- nat]} és {N : [|- nat]} operandusokra az [|- add M N P] (összeadás) relációt emeli első osztályú számítási taggá (first-class computational citizen). Ez teszi lehetővé, hogy az összeadás eredményét más típusok predikátumaként használják.
-2.	MulW: Hasonló burkoló a szorzási relációk (pl. dimenzió számítás) köré.
-3.	AddUniqueW és 16. MulUniqueW (A Műveletek Egyedisége): A matematikában evidens, a gép számára azonban nem: ha 
+### Gyorsindítási Parancsok
 
- és 
+- **Alapértelmezett futtatási parancs:** `zig build`
+- **Telepítési parancs:** `sh -c zig build`
 
-, akkor biztosan 
+### Építési Rendszer Implementáció
 
--e? A típuselméletben egy reláció önmagában nem garantálja a függvény-szerű (egyértékű) leképezést. E két tanú matematikai szigorral igazolja a műveletek determinizmusát, amihez az LF eq-nat konstruktorát használják. Ezen determinizmus nélkül a memóriacímszámítás több lehetséges alternatív valóságot eredményezne a bizonyító motor számára, megbénítva a tenzorok kezelését.
-Algebrai Alaptulajdonságok és Kommutativitás
-A többdimenziós tenzorok forgatása, transzponálása és memórián belüli átrendezése elképzelhetetlen ezen alaptulajdonságok hiányában.
-17. AddCommW: Az összeadás kommutativitásának (
+Az építési folyamatot a `build.zig` kezeli, amely kihasználja az Zig Építési Rendszer API-t a C interop, GPU gyorsítás jelzők és belső modulképzés kezelésére.
 
-) induktív bizonyítása. Amikor egy tömböt sorfolytonosból oszlopfolytonossá konvertálnak a memóriában, az eltolások számítása felcserélődik. Ez a tanú engedi meg a fordítónak ezen transzformációk verifikálását anélkül, hogy a határokat újra kiszámolná.
-18. AddZeroRightW: Az additív identitás bizonyítéka, azaz 
+**Építési jelző:**
+- `-Dgpu_acceleration=[bool]` (alapértelmezett: `false`) – Ez a jelző az Zig kódba kerül az `addOptions`-en keresztül, lehetővé téve a futásidejű rendszer számára a GPU-specifikus logika váltását.
 
- ([|- add N z N]). Különösen iterációk és rekurziók leállási feltételénél, valamint offset nélküli alapcím-hivatkozások (base pointer) bizonyításában alkalmazott tétel.
-19. AddSuccRightW: A rákövetkezési aritmetika sarokköve: 
+### Logikai Forrásképzési Táblázat
 
-, azaz Beluga jelöléssel add M (s N) (s P). A ciklusok lépéseinek iteratív növelése a Zig nyelvben erre az axiómára támaszkodik a pointeraritmetikában.
-20. AddAssocW és 21. RevAssocW: Az összeadás asszociativitásának (
+| Forrásfájl | Virtuális Útvonal | Szerep |
+|---|---|---|
+| `rsf.zig` | `rsf/rsf.zig` | Fő belépési pont az RSF könyvtárhoz |
+| `oftb.zig` | `rsf/oftb.zig` | Ortogonális Fraktáltranszformációs Blokk logika |
+| `accel_interface.zig` | `hw/accel/accel_interface.zig` | Hardvergyorsítás absztrakció |
+| `cuda_bindings.zig` | `hw/accel/cuda_bindings.zig` | FFI a CUDA meghajtó API-hoz |
+| `core/tensor.zig` | `core/tensor.zig` | Alapvető tenzor adatszerkezetek |
 
-) bal és jobb irányú (reverz) tanúi. Paraméterezésük ({A : [|- nat]} {B : [|- nat]} {C : [|- nat]} {ABC : [|- nat]}) rávilágít, hogy a Beluga miként láncol össze részeredményeket (pl. ) egy teljes globális memóriacím levezetéséhez (). Transzformációs gráfok (például csúszóablakok / sliding windows a CNN hálózatokban) offset-számításainál nélkülözhetetlenek.
-Egyenlőségek, Egyenlőtlenségek és Monotonitás Transzformációja
-A fennmaradó 11 induktív bizonyítás a memória-allokációk intervallumainak manipulációját teszi lehetővé. Bármely ugrás, eltolás vagy szorzás a memóriában monoton viselkedést követel meg, hogy a globális korlátok tiszteletben maradjanak.
-22. EqNatSymW és 23. EqNatTransW: Az egyenlőség szimmetriája (
+### C Interop és GPU Összekapcsolás
 
-) és tranzitivitása (
+Az RSF könyvtár `rsf` névvel ellátott statikus könyvtárként kerül fordításra. Az építési rendszer a következőket végzi:
 
-). Alapvető logikai pillérek a változók transzparens felcserélhetőségéhez a bizonyítási kontextusban.
-24. LeqTransW és 25. LtLeqTransW: A "kisebb vagy egyenlő" és a "szigorúan kisebb" relációk tranzitív átvitele. Ez utóbbi azt igazolja, hogy ha egy index szigorúan kisebb egy puffer határánál, és ez a puffer kisebb (vagy egyenlő), mint a globális L1 cache allokáció, akkor az index garantáltan kisebb a globális határnál. A memóriahierarchiák egymásba ágyazhatóságát igazoló dedikált tanúk.
-26. LeqSuccW és 27. LtSuccLeqW: Bizonyítékok a természetes számok rákövetkezőivel való viszonyról. Garantálja, hogy egy szám (index) automatikusan kisebb (vagy kisebb-egyenlő), mint az eggyel megnövelt változata (
+- **C forrásintegráció:** A `futhark_kernels.c` hozzáadása specifikus jelzőkkel (`-std=c99`, `-O2`)
+- **Szabványos könyvtár összekapcsolás:** Az `libc`-hez való kapcsolás a C-alapú kernelek támogatásához
+- **Feltételes CUDA összekapcsolás:** Ha a `gpu_acceleration` engedélyezett, az építő a `cuda` könyvtárát kapcsolja össze
 
-, 
+---
 
-). Bár triviálisnak hangzik emberi elmével, a gép számára ezen iterációs struktúrák kényszerítése akadályozza meg a pointerek végtelen inkrementációját (infinite loops) bizonyos határokon túl.
-28. LeqAddW: Induktív bizonyítás arra, hogy az összeadás operációja monoton növekvő: önmagában garantálja, hogy bármely pozitív eltolás hozzáadása egy báziscímhez nem sérti a növekedés irányát, megőrizve a memóriablokkok sorrendiségét.
-29. AddRightPreservesLtW és 30. AddLeftPreservesLtW: Az eltolások invarianciájának bizonyítékai az egyenlőtlenségekre: ha 
+## 2. fejezet – Architektúra Áttekintés
 
-, akkor 
+### Négyrétegű Szerkezeti Modell
 
- minden természetes 
+| Réteg | Leírás |
+|---|---|
+| **Formális Verifikációs Réteg** | Lean 4, Beluga, Mizar és Twelf – matematikai garanciák az invertálhatóságról, memóriabiztonságról és szerkezeti integritásról |
+| **Zig Futásidejű Réteg** (`rsf.zig` / `pheap`) | Az alap végrehajtási motor – RSF és RSFLayer struktúrák, affin kapcsolási transzformációk, életciklus-kezelés |
+| **GPU Gyorsítási Réteg** (`accel/`) | Nagy teljesítményű implementációk Futhark-generált kernelek és CUDA kötések használatával |
+| **Elosztott Tanítási Réteg** (`distributed/`) | Több GPU-s munkaterhelések orkesztrálása NCCL-lel és osztott adatkészlet-betöltéssel |
 
--re. Ezen két tétel engedi meg a Zig kódnak, hogy lokálisan kiszámolt biztonságos indexeket egy globális pointerhez igazítva (offsetting) alkalmazza. A transzláció mindkét irányból (Left/Right) bizonyított az aszimmetrikus optimalizációk kiszolgálása végett.
-31. MulPreservesLeqW: A dimenziószorzás monotonságának tétele. Ha egy "X" batch kisebb vagy egyenlő egy "Y" kapacitással, akkor minden dimenzionális skálázás ezen felül ugyanezt a limit-kapcsolatot fogja mutatni. Kritikus elem a dinamikus batch méretezéshez a tanulási algoritmusokban.
-32. AddMonoRightW: Egy specifikus burkoló a jobboldali addíciós monotonitásra, ami végső garanciát szolgáltat ahhoz, hogy a kiterjesztett memóriaintervallumok lefedik az eredeti relációkat (``) a Beluga típuselméleti fájában.
-Strukturális megjegyzés a fájl felépítéséhez: A fenti, szigorúan számba vett 32 bizonyítás egy tökéletesen záródó logikai egységet alkot az aritmetikai alapszintektől a többdimenziós tenzor indexelésen át egészen a komplex, állapotgépre épülő aszinkron memóriakezelésig. Bár a publikus snippet részlet a fájl végét illetően csonka (az InverseShapeW definiálása közben az rsf.bel véget ér ), a felsorolt 32 inductive tétel deduktívan kimeríti az alapkódbázis által támasztott legfőbb verifikációs igényeket.
-Invariánsok a Neurális Hálózatok Architektúrájában
-Az rsf.bel egy további, magasabb rendű absztrakciós képességgel is rendelkezik, amelyet az LF (Logical Framework) deklarációk jelenléte igazol, még ha azok számítási tanúi (W-vel végződő induktív típusok, pl. LayerShapeInvW, SliceValidW stb.) nincsenek is megvalósítva az elemzett kódrészletben. Ezen invariáns deklarációk megértése kardinális, hiszen ezek vetítik előre a keretrendszer tényleges gépi tanulási (ML) felhasználását.
-A Zig nyelven írt ML keretrendszerek egyik legnagyobb típushibája az úgynevezett "Shape Mismatch" (alak-inkonzisztencia), amikor a mátrixszorzások során a bemeneti és a súlymátrixok dimenziói nem harmonizálnak, ami a program futásidejű összeomlását okozza. A Beluga specifikáció a következő szabályokkal semlegesíti ezt:
-A layer-shape-inv LF deklaráció kényszeríti a rétegek négyzetes dimenzionális integráltságát, megkövetelve a típusrendszertől, hogy bizonyítható legyen a mul Dim Dim DimSq és a mul (s z) Dim Dim (ami strukturálisan az 
+---
 
- axiómája). Ugyanezen a mintán alapul a grad-shape-inv is, amely a hibavisszaterjesztés (backpropagation) folyamán garantálja, hogy a gradiens-deriváltak strukturálisan ráfektethetők az alap tenzorokra, így megelőzve az eltolódott (skewed) memória-felülírásokat.
-A komplex ML modellekre koncentrálva a model-shape-inv egy öt-változós egyenletrendszert (Batch, Dim, TwoD, Full, Half) rögzít axiomatikus szinten, garantálva a Dim + Dim = TwoD felbontás és a Batch * TwoD = Full szorzás egyidejű érvényességét a teljes gráf áteresztőképességére vetítve. Továbbá egy tipikus Zig nyelvi konstrukcióra reagálva, a slice-valid reláció rögzíti, hogy a standard nyelvspecifikus memóriaszeletek indexelésekor minden esetben teljesülnie kell a Start + Len = End matematikai igazságának, oly módon, hogy a végpont nem sérti a globális (Total) kereteket. Bár az induktív tanúk megírása a jövőbeli kódbázis-kiterjesztésre vár, a szabályok axiomatizálása a rendszer érettségéről tanúskodik.
-Szintézis és Végső Következtetések
-Egy ilyen kiterjedt és mindenre kiterjedő formális verifikáció a rendszerprogramozásban nem csupán elméleti érdekesség, hanem komoly paradigma-váltást demonstrál. Ahelyett, hogy a nyelv (ebben az esetben a Zig) saját magát korlátozná és kényszerítene ki teljesítményt rontó statikus memóriamodelleket, egy radikális alternatívát választ. A manuális, teljes kontrollt adó memóriakezelést megtartva, egy külső, szigorúan tisztán matematikai keretrendszerre (Beluga/LF) ruházza át a biztonság igazolásának terhét.
-A típuselméleti modellezés – a primitív Peano egyenlőségektől felépítve az indexelési tanúkon át egészen a komplex referenciaszámlálós állapotgépekig – lehetővé teszi, hogy a végső iterációk során a hardveres regiszterek csak a tiszta végrehajtást végezzék, iteratív ellenőrzések nélkül. A 23 elméleti típus (LF) felállította a szabályrendszert, a pontosan és kimerítően megszámlált 32 induktív bizonyítás (amelyből 4 bizonyítás kifejezetten és exkluzívan a Zig nyelv specifikus memóriakezelésére összpontosít) pedig maradéktalanul igazolja azt a modellt, ahol a maximális HPC számítási sebesség a legmagasabb elméleti szoftverbiztonsággal egyesül. A Curry-Howard izomorfizmus gyakorlati alkalmazása révén az rsf.bel fájl nem csak leírja, hanem algoritmikusan, konstruktív bizonyításokkal kényszeríti ki a hibamentes végrehajtást.
+## 2.1 – RSF Zig Futásidejű Rendszer (`rsf.zig`)
 
+Az `rsf.zig` fájl az elsődleges CPU-oldali futásidejű rendszer. Definiálja az alap adatszerkezeteket, matematikai transzformációkat és életciklus-kezelést.
 
+### Alap Adatszerkezetek
 
-4. Rendszerarchitektúra és Implementáció
-A rendszer egy szigorúan típusos, nagy teljesítményű stackre épül, amely elválasztja a vezérlési logikát a hardveres gyorsítástól.
+| Struktúra | Cél | Kulcsmezők |
+|---|---|---|
+| `RSFConfig` | Globális korlátozások | `max_dim`, `max_layers`, `clip_min`, `clip_max` |
+| `RSFLayerConfig` | Rétegspecifikus beállítások | `seed_offset`, `grad_mean` |
+| `LayerCore` | Súlytárolás | `s_weight`, `t_weight`, `s_bias`, `t_bias` |
 
-Zig Runtime (A Vezérlő Mag)
-A Zig felelős a memóriabiztonságért, a szálkezelésért és a modell életciklusáért.
+### Kapcsolási Transzformáció Matematika
 
-Handle/Core Registry Minta: A publikus API (pl. RSF, RSFLayer) csak azonosítókat (handle) mozgat. A tényleges adatok (RSFCore, LayerCore) egy szálbiztos, referenciaszámlált registry-ben élnek. Ez a Beluga által verifikált architektúra teszi lehetetlenné a Use-After-Free és Double-Free hibákat.
+**Előremeneti menet** – egy `[x1, x2]`-re osztott bemenet esetén:
 
-Szálbiztosság: std.Thread.RwLock biztosítja, hogy a forward/inverse pass-ek (olvasások) párhuzamosan futhassanak, míg a súlyfrissítések (írások) exkluzív zárat kapnak.
+1. **Osztás:** A bemenet `x` → `x1` és `x2`
+2. **Skála és Transzláció:** `S = affine(x1, W_s, b_s)` és `T = affine(x1, W_t, b_t)`
+3. **Transzformáció:** `y1 = x1` és `y2 = x2 * exp(S) + T`
 
-COW (Copy-On-Write) Tenzorok: A TensorData struktúra intelligens referencia-számlálással minimalizálja a memóriamásolásokat.
+**Inverz menet** – a bemenet pontos visszaállítása:
 
-Futhark GPU Gyorsítás
-A matematikai nehézemelés a Futhark funkcionális, adatpárhuzamos nyelven íródott (futhark_kernels.fut), amelyből optimalizált C/CUDA kód generálódik.
+1. `x1 = y1`
+2. `x2 = (y2 - T) * exp(-S)`
 
-Összevont Kernelek: A training_step kernel egyetlen GPU hívásban végzi el a forward pass-t, a hiba (MSE) számítást, a backward pass-t és a momentum-alapú súlyfrissítést. Nincs felesleges PCIe adatmozgatás.
+### Implementációs Részletek
 
-In-Place Skálázás: A súlyok a GPU VRAM-jában maradnak (FutharkArray2DF16), a frissítések helyben történnek.
+**Xavier Inicializálás**
+A súlyokat Xavier (Glorot) inicializálással inicializálják a variancia fenntartásához a rétegek között. A futásidejű rendszer kiszámítja a határértéket a bemeneti/kimeneti dimenziók alapján, és ennek megfelelően tölti fel az `s_weight` és `t_weight` tenzorokat.
 
-Elosztott Tanítás és Skálázás
-Az RSF natívan támogatja a multi-GPU és felhő alapú tanítást.
+**GPU Tartalék Logika**
+Az `rsf.zig` logikát tartalmaz a hardvergyorsítás elérhetőségének ellenőrzésére. Ha GPU kontextus elérhető, a műveletek a Futhark kernelekhez kerülnek; egyébként a futásidejű rendszer SIMD-barát Zig ciklusokra tér vissza.
 
-GPUCoordinator: NCCL (NVIDIA Collective Communications Library) alapú szinkronizáció.
+**Szálbiztos Regisztrum**
+- `RwLock` – a globális modellállapot hozzáférésének kezelésére
+- **Referenciaszámlálás** – biztosítja, hogy a rétegek ne kerüljenek felszabadításra, amíg menet folyamatban van
 
-Delta-Átlagolás: A rankok lokálisan számolják a gradienseket, majd az allReduceFloat16 / allReduceFloat32 segítségével csak a súly-deltákat szinkronizálják, minimalizálva a hálózati sávszélesség-igényt.
+**4. Verziójú Szerializáció**
+- **Magic bájtok** – azonosítja az RSF fájlformátumot
+- `SAVE_VERSION = 4`
+- **CRC32** – minden szerializált blokk ellenőrző összeggel védett
 
-Modal Cloud Integráció: A ModalGPUClient közvetlenül a Modal API-val kommunikálva képes 8-GPU-s klasztereket (B200/B300) allokálni és a tanítási feladatokat konténerizálva futtatni.
+**Validáció és Biztonság**
+- `validateClipRange` – biztosítja, hogy az S és T értékek ne vezessenek exponenciális robbanáshoz
+- `ensureFiniteSlice` – a tenzorokat NaN vagy Inf értékekre vizsgálja
+- `tensorsOverlap` – puffer-aliasszágot észlel a memóriasérülés megelőzésére
 
-5. Fájlformátum és Perzisztencia (RSF0)
-A modell mentése és betöltése egy egyedi, Mizar által verifikált bináris formátumban történik, amely garantálja az adatintegritást.
+---
 
-Magic Bytes: RSF0 (4 bájt)
+## 2.2 – pheap Könyvtár
 
-Verzió: SAVE_VERSION = 4 (u32, little-endian)
+A **pheap** könyvtár egy önálló, gyártási minőségű futásidejű rendszer az RSF modellhez. C-kompatibilis felületet, robusztus tartóssági mechanizmusokat és szálbiztos végrehajtást biztosít.
 
-Fejléc: Dimenzió, Rétegszám, Clip Min/Max, Grad Mean flag, Max Dim/Layers korlátok.
+### Kódentitás Térkép
 
-Payload: A rétegek súlyai és torzításai (s_weight, t_weight, s_bias, t_bias) szekvenciálisan, f32 vagy f16 formátumban.
+| Rendszernév | Kódentitás | Fájlútvonal |
+|---|---|---|
+| Mag Modell Állapot | `RSFCore` | `pheap/c/pheap.zig` |
+| Egyedi Réteg | `LayerCore` | `pheap/c/pheap.zig` |
+| GPU Kontextus | `GpuContext` | `pheap/src/api.zig` |
+| Memóriaallokátor | `Tensor1D` / `Tensor2D` | `pheap/c/allocator.zig` |
+| Párhuzamossági Őr | `RwLock` / `ReadGuard` | `pheap/src/concurrency.zig` |
 
-Integritás: A teljes fájlt egy CRC32 ellenőrzőösszeg zárja.
+### Építési Rendszer
 
-Atomi Mentés: A mentés egy .tmp fájlba történik, majd egy atomi std.fs.rename hívással írja felül a régi modellt (megtartva egy .bak másolatot). A Repairer modul képes sérült fájlok esetén a backupból automatikusan helyreállítani a modellt.
+- **Statikus könyvtár** (`librsf.a`) – az `src/api.zig`-ből fordítva
+- **CLI eszközök:** `rsf` (általános műveletek) és `rsf-inspect` (pillanatkép hibakeresés)
+- **Tesztsorozatok:** egységtesztek és `crash_tests` a helyreállítási logika ellenőrzésére
 
-6. Összegzés
-A Reversible Scatter Flow nem egy alternatíva. Ez a mélytanulás evolúciós ugrása. Amikor a determinisztikus információáramlást, a sub-hálózatok nélküli tiszta affin csatolást és az O(1) memóriakomplexitást egyesítjük a formális tételbizonyítók matematikai garanciáival, egy olyan rendszert kapunk, amely mentes a jelenlegi AI iparág minden hardveres és topológiai korlátjától. Az RSF a bizonyíték arra, hogy nem nagyobb memóriára, hanem jobb matematikára van szükségünk.
+---
+
+## 2.2.1 – pheap Mag és C Interop Réteg
+
+- **RSFCore** – a modell metaadatait, konfigurációját és a `LayerCore` példányok tömbjét kezelő központi struktúra
+- **Futhark Kernelek** – nagy teljesítményű számítási kernelek az előremeneti, inverz és visszameneti menetekhez (`pheap/c/compute.fut`)
+- **TPM Segédprogramok** – alacsony szintű C függvények gyors CRC32 számításokhoz és cache-kezeléshez (`c/tpm.c`)
+
+---
+
+## 2.2.2 – pheap Tartósság, Tranzakciók és Helyreállítás
+
+A pheap egy szigorú tartóssági vermet implementál, amelyet rendszerösszeomlások és hardverhibák túlélésére terveztek.
+
+- **SaveTransaction** – `.tmp` és `.bak` fájlokat használ az atomitás biztosításához
+- **Javító** – automatikusan észleli a sérülést és helyreállítja biztonsági másolatokból
+- **WAL (Előreíró Napló)** – rekordálja az inkrementális frissítéseket a teljes pillanatképek között
+
+---
+
+## 2.2.3 – pheap Párhuzamosság, GC és Biztonság
+
+- **Párhuzamosság:** `RwLock` – több egyidejű olvasó, kizáró hozzáférés a tanítási lépésekhez
+- **Szemétgyűjtés:** `CoreRegistry` – nyomon követi az aktív hivatkozásokat, megakadályozva a korai felszabadítást
+- **Biztonság:** validálja az összes bemeneti dimenziót és a lebegőpontos értékek végességét
+
+---
+
+## 2.3 – OFTB: Ortogonális Fraktáltranszformációs Blokk
+
+Az **OFTB** az RSF modell egyik legfontosabb komponense, amely biztosítja a globális kontextus-keverést a dimenziók között. Determinisztikus pillangó-keverési mechanizmust használ, amely megakadályozza a „halott csatorna" összeomlást azáltal, hogy a tenzor dimenzióit **1/√2 skálafaktorral** keveri össze.
+
+Az OFTB blokk minden kapcsolási transzformációs réteg között alkalmazásra kerül, biztosítva, hogy az adatok mindkét fele végül kölcsönhatásba lépjen egymással. A pillangó-keverési minta felcseréli a tenzor elemeit egy specifikus séma szerint, majd rögzített skálázást alkalmaz – garantálva a matematikai invertálhatóság megmaradását.
+
+---
+
+## 3. fejezet – Hardvergyorsítás
+
+A hardvergyorsítási réteg két fő komponensből áll:
+
+1. Az **RSFAccelerator** felület – absztrahálja a hardveres műveleteket
+2. A konkrét GPU implementációk – Futhark kernelek és CUDA kötések
+
+### 3.1 – RSFAccelerator és Futhark Integráció
+
+Az **RSFAccelerator** egy absztrakt interfész, amely definiálja az összes hardverspecifikus műveletet (inicializálás, előremeneti menet, inverz menet, tanítási lépések).
+
+A **Futhark** kernelek a következő műveleteket valósítják meg:
+
+- **Előremeneti menet** – az affin kapcsolási transzformáció kiszámítása
+- **Inverz menet** – a bemenet pontos visszaállítása a kimenetből
+- **Visszameneti menet** – a gradiensek számítása az összes súlyhoz és biashoz
+- **OFTB műveletek** – a pillangó-keverési transzformáció végrehajtása
+
+### 3.2 – CUDA Kötések és GPU Műveletek
+
+A CUDA kötések (`cuda_bindings.zig`) a következő funkciókat biztosítják:
+
+- GPU kontextus kezelés és inicializálás
+- Memóriaallokáció és felszabadítás (`cudaMalloc`)
+- Adatátvitel CPU és GPU között (`cudaMemcpy`)
+- Kernel indítás és végrehajtási konfiguráció
+- Szinkronizációs primitívek a párhuzamos végrehajtáshoz
+
+---
+
+## 4. fejezet – Elosztott Tanítás
+
+### 4.1 – DistributedTrainerFuthark
+
+A `DistributedTrainerFuthark` az elosztott tanítási rendszer központi koordinátora:
+
+- **Adatkészlet felosztás** – az adatkészletet egyenletesen osztja el a GPU-k között
+- **Modell inicializálás** – minden GPU-n azonos kezdeti súlyokkal inicializál
+- **Szinkronizált tanítás** – koordinálja a tanítási lépéseket az összes GPU-n
+- **Súly aggregálás** – a gradienseket összegyűjti és átlagolja a globális súlyfrissítéshez
+
+### 4.2 – GPUCoordinator, NCCL és Modal Felhő
+
+A `GPUCoordinator` az NCCL használatával kezeli az alacsony szintű GPU-kommunikációt.
+
+**NCCL kollektív műveletek:**
+
+| Művelet | Leírás |
+|---|---|
+| `allReduceFloat16` | Az összes GPU gradienseinek összegzése és elosztása 16 bites formátumban |
+| `barrier` | Szinkronizációs pont az összes GPU között |
+| `broadcast` | Adatszórás egyik GPU-ról az összes többire |
+
+A **Modal** felhő integráció dinamikus GPU erőforrásokat biztosít, lehetővé téve a skálázást a keresletnek megfelelően.
+
+### 4.3 – Elosztott Tartósság és WAL
+
+**Biztonsági garanciák:**
+
+- **Inkrementális biztonsági másolat** – minden tanítási lépés után rekord készül
+- **Atomikus mentések** – a modellfájlok soha nem maradnak félig írt állapotban
+- **Automatikus helyreállítás** – összeomlás után a rendszer visszaállítja a legutolsó konzisztens állapotot
+
+---
+
+## 5. fejezet – Formális Verifikáció
+
+### 5.1 – Lean 4 Specifikációk
+
+| Fájl | Tartalom |
+|---|---|
+| `rsf.lean` | A kapcsolási transzformáció bijectivitásának és az OFTB invertálhatóságának bizonyításai |
+| `oftb_final.lean` | A pillangó-keverés matematikai helyességének bizonyításai |
+| `rfs.lean` | Az Előremeneti/Inverz menetek pontosságának és a FixedQ (32.32 fixpontos) aritmetika helyességének bizonyításai |
+
+**A Lean 4 bizonyítások garantálják:**
+- Az RSF transzformációk szigorúan bijektívek
+- Az előremeneti és inverz menetek pontosan inverzek egymásnak
+- A fixpontos aritmetika nem vezet információvesztéshez
+
+### 5.2 – Beluga, Mizar és Twelf Bizonyítások
+
+| Eszköz | Fájl | Verifikációs Terület |
+|---|---|---|
+| **Beluga** | `rsf.bel` | „Regiszter Biztonság" – UAF hibák hiányának garantálása HOAS segítségével |
+| **Mizar** | `rsf.miz` | Halmazelméleti specifikációk és bináris szerializációs logika |
+| **Twelf** | – | Szerkezeti invertálhatóság és párhuzamos memóriamodell |
+
+---
+
+## 6. fejezet – Tesztelés és Összeomlás-helyreállítás
+
+### 6.1 – Összeomlási Tesztsorozat
+
+A tesztsorozat a következő forgatókönyveket fedi le:
+
+- **Félbeszakított mentés** – a mentési folyamat megszakad a `.tmp` fájl írása közben
+- **Sérült fejléc** – CRC32 ellenőrző összeg hibák észlelése
+- **Hiányzó fájlok** – helyreállítás a `.bak` fájlból
+- **WAL inkonzisztencia** – részleges rekordok kezelése
+- **Memória szivárgás** – összeomlás utáni memóriaszivárgás ellenőrzése
+
+### 6.2 – Javító és Helyreállító Alrendszer
+
+**Komponensek:**
+- **Repairer** – koordinálja a helyreállítási folyamatot CRC32 ellenőrzéssel
+- **SnapshotRecovery** – megpróbálja betölteni a modellt az elsődleges elérési útról, sikertelenség esetén a biztonsági másolatból
+
+**Helyreállítási folyamat:**
+
+1. Az elsődleges fájl validálása (méret, fejléc CRC, hasznos adat CRC)
+2. Ha érvénytelen → `.tmp` fájl ellenőrzése
+3. Ha a `.tmp` érvényes → előléptetés elsődleges fájllá
+4. Ha a `.tmp` is érvénytelen → visszaállítás a `.bak` fájlból
+5. A biztonsági másolat validálása és az elsődleges fájl újraépítése
+
+> Minden helyreállított paraméter átmegy a `ensureFiniteF32` biztonsági validáláson – NaN és Inf értékek nem kerülhetnek a modellbe.
+
+---
+
+## 7. fejezet – Szójegyzék
+
+| Fogalom | Meghatározás |
+|---|---|
+| **RSF** (Reversible Scatter Flow) | Reverzibilis neurális hálózati architektúra bijektív transzformációkkal és O(1) memória-visszterjesztéssel |
+| **OFTB** | Determinisztikus pillangó-keverési mechanizmus 1/√2 skálafaktorral a globális kontextus-keveréshez |
+| **RSFLayer** | Az RSF modell egyedi rétege affin kapcsolási transzformációval (S és T paraméterek) |
+| **RSFCore** | A pheap könyvtár központi struktúrája az RSF modell állapotának kezelésére |
+| **LayerCore** | Egyedi réteg adatainak tárolása (súlyok, biasok, gradiensek, sebességek) |
+| **pheap** | Gyártási minőségű futásidejű rendszer C-kompatibilis felülettel, tartóssággal és párhuzamossági kezeléssel |
+| **RSFAccelerator** | Hardvergyorsítási absztrakciós felület a CPU és GPU közötti zökkenőmentes váltáshoz |
+| **Futhark** | Funkcionális, adatpárhuzamos programozási nyelv GPU kernelek generálásához |
+| **CUDA** | NVIDIA GPU programozási platform és API |
+| **NCCL** | Optimalizált kollektív kommunikációs könyvtár több GPU-s rendszerekhez |
+| **SaveTransaction** | Tranzakciós mentési mechanizmus `.tmp` és `.bak` fájlokkal az atomi mentések biztosításához |
+| **WAL** (Write-Ahead Log) | Előreíró napló az állapotváltozások rögzítésére a pillanatképek között |
+| **CRC32** | Ciklikus redundancia-ellenőrzés 32 bites adatintegritás-ellenőrzéshez |
+| **Xavier Inicializálás** | Súlyinicializálási módszer a variancia fenntartásához a rétegek között |
+| **Bijectív** | Pontosan invertálható transzformáció (injektív és szürjektív) |
+| **Affin Kapcsolás** | Transzformáció ahol a bemenet két félre osztott, és az egyik fél a másik alapján transzformálódik |
+| **Formális Verifikáció** | Matematikai bizonyítási módszerek a szoftver helyességének garantálására |
+| **Lean 4** | Funkcionális programozási nyelv és formális verifikációs eszköz |
+| **Beluga** | Formális verifikációs rendszer Magasabb Rendű Absztrakt Szintaxissal (HOAS) |
+| **Mizar** | Matematikai formális nyelv és verifikációs rendszer |
+| **Twelf** | Logikai keretrendszer formális bizonyításokhoz |
+| **Tenzor** | Többdimenziós tömb – a neurális hálózatok alapvető adatszerkezete |
+| **GPU** | Speciális hardver párhuzamos számításokhoz |
+| **Modal** | Felhőalapú számítási platform dinamikus GPU erőforrásokkal |
+| **DistributedTrainerFuthark** | Az elosztott tanítási rendszer központi koordinátora |
+| **GPUCoordinator** | Alacsony szintű GPU kommunikációs koordinátor NCCL használatával |
+| **Regiszter Biztonság** | Garancia arra, hogy a memóriaregiszterek nem kerülnek szabadításra használat közben |
+| **UAF** (Use-After-Free) | Memóriabiztonsági hiba felszabadított memóriaterület elérésekor |
+| **FixedQ** | 32.32 fixpontos aritmetikai formátum az RSF modellben |
