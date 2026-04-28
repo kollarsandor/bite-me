@@ -38,6 +38,7 @@ Az információ keverését az RSF-ben egy **determinisztikus „scatter" (szór
 ahol $\text{inv\_sqrt2} = 1/\sqrt{2}$. Ez a strukturális keverés minden rétegben permutálja a dimenziókat, lehetővé téve a teljes kontextus modellezését drága figyelemmátrixok kiszámítása nélkül.
 
 Hasonlóképpen hiányoznak az architektúrából a **konvolúciós szűrők és a hagyományos előrecsatolt hálózatok (MLP)**. Az RSF esetében a súlymátrixok kizárólag az affin kapcsolás skálázási és transzlációs paramétereinek generálásáért felelnek, ezzel jelentősen növelve a paraméterhatékonyságot és a matematikai értelmezhetőséget.
+<img width="1254" height="1254" alt="image" src="https://github.com/user-attachments/assets/d921818e-5ad1-4a18-84dc-f17015af4ab3" />
 
 #### A Normalizációs Rétegek és Hagyományos Aktivációs Függvények Eltávolítása
 
