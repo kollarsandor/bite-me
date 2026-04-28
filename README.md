@@ -1,6 +1,37 @@
 # Reversible Scatter Flow (RSF) – Teljes Dokumentáció
 
 ---
+Summary:
+Az RSF (Reversible Scatter Flow) egy újszerű neurális hálózati architektúra, amely kizárólag egy invertálható affin csatolás primitívre (split → scale → translate) épül, O(1) memória-komplexitással a backward pass során.
+
+ Alapvető Struktúra
+
+Az RSF teljes mértékben mentes a hagyományos komponensektől, mint self-attention, MLP blokkok, konvolúciók vagy LayerNorm; a LayerCore csupán négy tenzort használ (s_weight, t_weight, s_bias, t_bias) a skálázáshoz és eltoláshoz. A forward pass szekvenciálisan számolja a scale-t x2-ből, alkalmazza y1-re, majd trans-t a módosított y1-ből y2-höz adva – ez kereszt-csatolásként erősebb interakciót teremt, mint a RealNVP párhuzamos verziója. Az invertálhatóság futásidőben ellenőrizhető (forwardOnCore → inverseOnCore), és formálisan verifikált Lean 4, Mizar, Twelf, Beluga rendszerekkel, garantálva a bijektivitást anélkül, hogy aktivációkat tárolna.
+
+A scatter mechanizmus (rsf_scatter, Orthogonal Fractal Transform Block) fraktál-keverést végez 1/√2 skálázással, biztosítva a dimenziók közötti információáramlást anélkül, hogy permutációra vagy maszkolásra szorulna, ellentétben a NICE/RealNVP/Glow modellekkel, amelyek belső MLP/ResNet blokkokat használtak a s/t függvényekhez.
+
+ Hardveres Előnyök
+
+Zig nyelven íródott a kódbázis (rsf.zig), közvetlen CUDA/Futhark integrációval, pinned memory és aszinkron DMA-val, kihagyva a PyTorch/Python overheadet; F16 konverzió natívan történik GPU tolás előtt. Kompatibilis NVIDIA B200/B300 hardverrel (default_group_size=256, 8 CUDA warp), tenzormagok F16/F32-rel maximálisan kihasználva, FlashAttention nélkül, mivel nincs O(N²) attention mátrix – IO-bound problémák kizárva. A backward O(1) memóriája lehetővé teszi akár 10 000+ rétegű traininget azonos VRAM-mal, szemben Transformer/Mamba O(L) igényével.
+
+Production-ready elemek: CRC32 checkpointok, NCCL allReduce, ModalGPUClient felhő telepítés.
+
+ Különbségek Elődöktől
+
+RealNVP/Glow/NICE generatív flow-ként használták az affin csatolást (y1 = x1 ⊙ exp(s(x2)), y2 = x2 + t(x1)), de belső komplex hálózatokkal (ResNet/MLP) a s/t-hez; RSF ezeket eltávolítja, egyetlen mátrix-vektor szorzást (W·x + b) használva, diszkriminatív LLM kontextusra szabva. Mamba eltűnt 2025-re reasoning feladatokon, hibridizve Transformerrel; RSF чисто O(1) stack-el skálázódik korlát nélkül. RevNet/Reformer wrapper-ek, RSF ontológiailag puritán: egyetlen primitív a gyökér.
+
+| Architektúra | Primitív | Memória Backward | Belső Hálózatok | Cél |
+|--------------|----------|-------------------|-----------------|-----|
+| RealNVP/Glow | Affin coupling | O(L) | Igen (MLP/ResNet) | Generatív |
+| Transformer | Self-attention | O(L) | Igen (MLP) | Diszkriminatív |
+| Mamba | SSM scan | O(L) | - | Hibrid |
+| RSF | Cross-affine + scatter | O(1) | Nem | Diszkriminatív/LLM |
+
+ Paradigma Állapot
+
+RSF a 5. gyökér-architektúra (Perceptron, CNN, RNN, Transformer után): ontológiailag új, kizárólagos primitívvel, 100% információ-megőrzéssel (invertálható), Curry-Howard alapján verifikált tézként. Nem igényel ökoszisztémát induláskor (mint Transformer 2017-ben); ha skálázódik, forradalmasítja exascale LLM traininget költségcsökkentéssel. Teljesítmény empirikusan igazolandó, de státusz a kódból fakad.
+
+Ez a puritán dizájn determinisztikus áramlást biztosít, felrobbantva a memória-mítoszt anélkül, hogy speciális kernelre szorulna.
 
 ## I. RÉSZ: Elméleti Alapok és Architekturális Értékelés
 
