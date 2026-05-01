@@ -1,7 +1,46 @@
+```lean
 import Std.Data.Nat.Basic
 import Std.Data.List.Basic
 
 namespace ZigOFTB
+
+structure F32Ops where
+  F32 : Type
+  lit70710678 : F32
+  lit05 : F32
+  undefined : F32
+  add : F32 → F32 → F32
+  mul : F32 → F32 → F32
+
+structure FixedBuffer16384 (α : Type) where
+  get : Fin 16384 → α
+
+def FixedBuffer16384.set (α : Type) (buf : FixedBuffer16384 α)
+    (i : Fin 16384) (v : α) : FixedBuffer16384 α :=
+  { get := fun j => if j = i then v else buf.get j }
+
+def FixedBuffer16384.ofUndefined (ops : F32Ops) : FixedBuffer16384 ops.F32 :=
+  { get := fun _ => ops.undefined }
+
+theorem FixedBuffer16384.get_set_eq (α : Type) (buf : FixedBuffer16384 α)
+    (i : Fin 16384) (v : α) :
+    (FixedBuffer16384.set α buf i v).get i = v :=
+  show (if i = i then v else buf.get i) = v from
+    match (Nat.decEq i.val i.val) with
+    | Decidable.isTrue h  => Eq.refl v
+    | Decidable.isFalse h => False.elim (h (Eq.refl i.val))
+
+theorem FixedBuffer16384.get_set_ne (α : Type) (buf : FixedBuffer16384 α)
+    (i j : Fin 16384) (h : i ≠ j) (v : α) :
+    (FixedBuffer16384.set α buf i v).get j = buf.get j :=
+  show (if j = i then v else buf.get j) = buf.get j from
+    match (Nat.decEq j.val i.val) with
+    | Decidable.isTrue heq =>
+        False.elim (h (Fin.eq_of_val_eq heq))
+    | Decidable.isFalse _  => Eq.refl (buf.get j)
+
+def mkBufIndex (i : Nat) (h : i < 16384) : Fin 16384 :=
+  Fin.mk i h
 
 def boolNot : Bool → Bool
 | true => false
@@ -43,6 +82,9 @@ theorem boolOr_false_true : boolOr false true = true := Eq.refl true
 
 theorem boolOr_false_false : boolOr false false = false := Eq.refl false
 
+theorem boolFalseNeTrue (h : false = true) : False :=
+  @Eq.rec Bool false (fun x _ => if x then False else True) True.intro true h
+
 def natLeBool : Nat → Nat → Bool
 | 0, _ => true
 | Nat.succ _, 0 => false
@@ -73,10 +115,10 @@ match a with
 | 0 => Eq.refl true
 | Nat.succ a1 =>
   match b with
-  | 0 => False.elim (Bool.noConfusion hab)
+  | 0 => False.elim (boolFalseNeTrue (Eq.trans (Eq.symm (natLeBool_succ_zero a1)) hab))
   | Nat.succ b1 =>
     match c with
-    | 0 => False.elim (Bool.noConfusion hbc)
+    | 0 => False.elim (boolFalseNeTrue (Eq.trans (Eq.symm (natLeBool_succ_zero b1)) hbc))
     | Nat.succ c1 => natLeBool_true_trans a1 b1 c1 (Eq.trans (natLeBool_succ_succ a1 b1) hab) (Eq.trans (natLeBool_succ_succ b1 c1) hbc)
 
 def mixBufferLen : Nat := 16384
@@ -141,14 +183,6 @@ theorem firstSlice_valid_of_lenEnough (dim len : Nat) (h : lenEnough dim len = t
 natLeBool_true_trans dim (doubleNat dim) len (natLeBool_left_add_right dim dim) h
 
 theorem secondSlice_valid_of_lenEnough (dim len : Nat) (h : lenEnough dim len = true) : sliceValidIn (secondSlice dim) len = true := h
-
-structure F32Ops where
-  F32 : Type
-  lit70710678 : F32
-  lit05 : F32
-  undefined : F32
-  add : F32 → F32 → F32
-  mul : F32 → F32 → F32
 
 def f32Scale (ops : F32Ops) : ops.F32 := ops.lit70710678
 
@@ -351,6 +385,52 @@ theorem copyToBufferLoop_length (ops : F32Ops) (source : List ops.F32) (sourceBa
 match count with
 | 0 => Eq.refl buffer.length
 | Nat.succ rest => Eq.trans (copyToBufferLoop_length ops source sourceBase (setAt buffer dest (getD ops.undefined source (sourceBase + dest))) (Nat.succ dest) rest) (setAt_length buffer dest (getD ops.undefined source (sourceBase + dest)))
+
+def copyToFixedBuffer (ops : F32Ops)
+    (source : List ops.F32) (sourceBase : Nat)
+    (buf : FixedBuffer16384 ops.F32)
+    (dest : Nat) (count : Nat) : FixedBuffer16384 ops.F32 :=
+  match count with
+  | 0           => buf
+  | Nat.succ rest =>
+    match Nat.decLt dest 16384 with
+    | Decidable.isTrue  h =>
+      let idx   := mkBufIndex dest h
+      let value := getD ops.undefined source (sourceBase + dest)
+      let buf'  := FixedBuffer16384.set ops.F32 buf idx value
+      copyToFixedBuffer ops source sourceBase buf' (Nat.succ dest) rest
+    | Decidable.isFalse _ => buf
+
+theorem copyToFixedBuffer_zero
+    (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat)
+    (buf : FixedBuffer16384 ops.F32) (dest : Nat) :
+    copyToFixedBuffer ops source sourceBase buf dest 0 = buf :=
+  Eq.refl buf
+
+theorem copyToFixedBuffer_succ_inbounds
+    (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat)
+    (buf : FixedBuffer16384 ops.F32) (dest count : Nat)
+    (h : dest < 16384) :
+    copyToFixedBuffer ops source sourceBase buf dest (Nat.succ count) =
+    copyToFixedBuffer ops source sourceBase
+      (FixedBuffer16384.set ops.F32 buf (mkBufIndex dest h)
+        (getD ops.undefined source (sourceBase + dest)))
+      (Nat.succ dest) count :=
+  match (Nat.decLt dest 16384) with
+  | Decidable.isTrue  h' =>
+      show copyToFixedBuffer ops source sourceBase
+             (FixedBuffer16384.set ops.F32 buf (mkBufIndex dest h') _)
+             (Nat.succ dest) count =
+           copyToFixedBuffer ops source sourceBase
+             (FixedBuffer16384.set ops.F32 buf (mkBufIndex dest h) _)
+             (Nat.succ dest) count from
+        congrArg
+          (fun idx => copyToFixedBuffer ops source sourceBase
+            (FixedBuffer16384.set ops.F32 buf idx
+              (getD ops.undefined source (sourceBase + dest)))
+            (Nat.succ dest) count)
+          (Fin.eq_of_val_eq (Eq.refl dest))
+  | Decidable.isFalse hf => False.elim (hf h)
 
 def forwardFirstValue (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) : ops.F32 := f32Add ops (getD ops.undefined data index) (f32Mul ops (getD ops.undefined data (half + index)) scale)
 
@@ -686,7 +766,7 @@ theorem forwardBackwardPipeline_lengths_preserved_under_success (ops : F32Ops) (
 
 def forwardFirstElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 := f32Add ops (getD ops.undefined data i) (f32Mul ops (getD ops.undefined data (dim + i)) scale)
 
-def forwardSecondElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 := f32Add ops (getD ops.undefined data (dim + i)) (f32MulScaleHalf ops (getD ops.undefined data (i - dim)) scale) 
+def forwardSecondElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 := f32Add ops (getD ops.undefined data (dim + i)) (f32MulScaleHalf ops (getD ops.undefined data (i - dim)) scale)
 
 def forwardSpecElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 :=
 match natLtBool i dim with
@@ -764,7 +844,7 @@ theorem backwardDataCompleted_tail (ops : F32Ops) (self : OFTB ops) (data : List
 
 theorem copyToBufferLoop_getD_prefix (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat) (buffer : List ops.F32) (dest count : Nat) (i : Nat) (h : natLtBool i count = true) : getD ops.undefined (copyToBufferLoop ops source sourceBase buffer dest count) (dest + i) = getD ops.undefined source (sourceBase + dest + i) :=
 match count with
-| 0 => False.elim (Bool.noConfusion h)
+| 0 => False.elim (boolFalseNeTrue (Eq.trans (Eq.symm (natLtBool_def i 0)) h))
 | Nat.succ rest =>
   match natLtBool i (Nat.succ rest) with
   | true => 
@@ -783,7 +863,7 @@ theorem backwardCopiedBuffer_getD (ops : F32Ops) (self : OFTB ops) (data : List 
 
 theorem forwardFirstLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool index i = true) (h2 : natLtBool i (index + count) = true) : getD ops.undefined (forwardFirstLoop ops scale half data index count) i = forwardFirstValue ops scale half data i :=
 match count with
-| 0 => False.elim (Bool.noConfusion h2)
+| 0 => False.elim (boolFalseNeTrue (Eq.trans (Eq.symm (natLeBool_succ_zero (index + count))) h2))
 | Nat.succ rest =>
   let value := forwardFirstValue ops scale half data index
   let dataNext := setAt data index value
@@ -799,7 +879,7 @@ match count with
 
 theorem forwardSecondLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool (half + index) i = true) (h2 : natLtBool i (half + index + count) = true) : getD ops.undefined (forwardSecondLoop ops scale half buffer data index count) i = forwardSecondValue ops scale half buffer data i :=
 match count with
-| 0 => False.elim (Bool.noConfusion h2)
+| 0 => False.elim (boolFalseNeTrue (Eq.trans (Eq.symm (natLeBool_succ_zero (half + index + count))) h2))
 | Nat.succ rest =>
   let value := forwardSecondValue ops scale half buffer data index
   let dataNext := setAt data (half + index) value
@@ -815,7 +895,7 @@ match count with
 
 theorem backwardSecondLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool (half + index) i = true) (h2 : natLtBool i (half + index + count) = true) : getD ops.undefined (backwardSecondLoop ops scale half data index count) i = backwardSecondValue ops scale half data i :=
 match count with
-| 0 => False.elim (Bool.noConfusion h2)
+| 0 => False.elim (boolFalseNeTrue (Eq.trans (Eq.symm (natLeBool_succ_zero (half + index + count))) h2))
 | Nat.succ rest =>
   let value := backwardSecondValue ops scale half data index
   let dataNext := setAt data (half + index) value
@@ -831,7 +911,7 @@ match count with
 
 theorem backwardFirstLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (buffer data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool index i = true) (h2 : natLtBool i (index + count) = true) : getD ops.undefined (backwardFirstLoop ops scale buffer data index count) i = backwardFirstValue ops scale buffer data i :=
 match count with
-| 0 => False.elim (Bool.noConfusion h2)
+| 0 => False.elim (boolFalseNeTrue (Eq.trans (Eq.symm (natLeBool_succ_zero (index + count))) h2))
 | Nat.succ rest =>
   let value := backwardFirstValue ops scale buffer data index
   let dataNext := setAt data index value
@@ -924,6 +1004,261 @@ have hle : lenEnough self.dim (forwardInPlace ops self x).tensor.data.length = l
 have htrue : lenEnough self.dim (forwardInPlace ops self x).tensor.data.length = true := Eq.trans hle h1
 And.right (And.right (backwardInPlace_correct_completed ops self (forwardInPlace ops self x).tensor.data h0 htrue h2))
 
-theorem goal_is_abstract_arithmetic_parametric : True := Eq.refl True
+def ZigF32 : Type := Float
+
+def zigLit70710678 : ZigF32 := 0.70710678
+
+def zigLit05 : ZigF32 := 0.5
+
+def zigUndefined : ZigF32 := 0.0
+
+def zigAdd : ZigF32 → ZigF32 → ZigF32 := Float.add
+
+def zigMul : ZigF32 → ZigF32 → ZigF32 := Float.mul
+
+def zigF32Ops : F32Ops where
+  F32 := ZigF32
+  lit70710678 := zigLit70710678
+  lit05 := zigLit05
+  undefined := zigUndefined
+  add := zigAdd
+  mul := zigMul
+
+theorem zigF32Ops_concrete_F32 : zigF32Ops.F32 = ZigF32 := Eq.refl ZigF32
+
+theorem zigF32Ops_concrete_add (a b : ZigF32) : zigF32Ops.add a b = Float.add a b := Eq.refl (Float.add a b)
+
+theorem zigF32Ops_concrete_mul (a b : ZigF32) : zigF32Ops.mul a b = Float.mul a b := Eq.refl (Float.mul a b)
+
+theorem zigF32Ops_concrete_lit70710678 : zigF32Ops.lit70710678 = 0.70710678 := Eq.refl 0.70710678
+
+theorem zigF32Ops_concrete_lit05 : zigF32Ops.lit05 = 0.5 := Eq.refl 0.5
+
+theorem zig_precondition_dim_le_buffer (dim : Nat) (h : bufferFits dim = true) : dim ≤ mixBufferLen := natLeBool_true_trans dim mixBufferLen (mixBufferLen) (natLeBool_refl dim) (Eq.mp (bufferFits_def dim) h)
+
+theorem zig_precondition_double_dim_le_usizeMax (dim : Nat) (h : usizeDoubleFits dim = true) : doubleNat dim ≤ usizeMax := natLeBool_true_trans (doubleNat dim) usizeMax (usizeMax) (natLeBool_refl (doubleNat dim)) (Eq.mp (usizeDoubleFits_def dim) h)
+
+theorem zig_precondition_len_enough (dim len : Nat) (h : lenEnough dim len = true) : doubleNat dim ≤ len := natLeBool_true_trans (doubleNat dim) len (len) (natLeBool_refl (doubleNat dim)) (Eq.mp (lenEnough_def dim len) h)
+
+theorem zig_slice_first_in_bounds (dim : Nat) (data : List ZigF32) (h : lenEnough dim data.length = true) : dim ≤ data.length := 
+have hdouble : doubleNat dim ≤ data.length := zig_precondition_len_enough dim data.length h
+natLeBool_true_trans dim (doubleNat dim) data.length (natLeBool_left_add_right dim dim) hdouble
+
+theorem zig_slice_second_in_bounds (dim : Nat) (data : List ZigF32) (h : lenEnough dim data.length = true) : doubleNat dim ≤ data.length := zig_precondition_len_enough dim data.length h
+
+theorem zig_buffer_access_in_bounds (dim : Nat) (i : Nat) (h : natLtBool i dim = true) (hbuf : bufferFits dim = true) : i < mixBufferLen := 
+have hdimle : dim ≤ mixBufferLen := zig_precondition_dim_le_buffer dim hbuf
+have hidim : i < dim := Eq.mp (natLtBool_def i dim) h
+natLeBool_true_trans i dim mixBufferLen (natLeBool_succ_succ i (Nat.pred dim)) (natLeBool_true_trans dim mixBufferLen mixBufferLen (natLeBool_refl dim) (Eq.mp (bufferFits_def dim) hbuf))
+
+theorem forward_memory_safe_index (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (i : Nat) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) (hi : natLtBool i self.dim = true) : i < x.data.length ∧ self.dim + i < x.data.length :=
+And.intro (zig_slice_first_in_bounds self.dim x.data h1) (have hsecond : doubleNat self.dim ≤ x.data.length := zig_precondition_len_enough self.dim x.data.length h1; natLeBool_true_trans (self.dim + i) (doubleNat self.dim) x.data.length (natLeBool_left_add_right self.dim i) hsecond)
+
+theorem backward_memory_safe_index (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (i : Nat) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) (hi : natLtBool i self.dim = true) : i < grad.length ∧ self.dim + i < grad.length :=
+And.intro (zig_slice_first_in_bounds self.dim grad h1) (have hsecond : doubleNat self.dim ≤ grad.length := zig_precondition_len_enough self.dim grad.length h1; natLeBool_true_trans (self.dim + i) (doubleNat self.dim) grad.length (natLeBool_left_add_right self.dim i) hsecond)
+
+theorem buffer_memory_safe_index (ops : F32Ops) (self : OFTB ops) (i : Nat) (h0 : usizeDoubleFits self.dim = true) (h2 : bufferFits self.dim = true) (hi : natLtBool i self.dim = true) : i < mixBufferLen := zig_buffer_access_in_bounds self.dim i hi h2
+
+def sliceList (ops : F32Ops) (data : List ops.F32) (s : SliceDescriptor) : List ops.F32 := List.take s.len (List.drop s.start data)
+
+theorem firstSlice_eq_zig_slice (ops : F32Ops) (dim : Nat) (data : List ops.F32) (h : lenEnough dim data.length = true) : sliceList ops data (firstSlice dim) = List.take dim data := Eq.refl (List.take dim data)
+
+theorem secondSlice_eq_zig_slice (ops : F32Ops) (dim : Nat) (data : List ops.F32) (h : lenEnough dim data.length = true) : sliceList ops data (secondSlice dim) = List.take dim (List.drop dim data) := Eq.refl (List.take dim (List.drop dim data))
+
+theorem forward_first_block_full_eq (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : ∀ i : Nat, natLtBool i self.dim = true → getD ops.undefined (forwardAfterFirst ops self data) i = forwardFirstValue ops self.fractal_scale self.dim data i := fun i h => forwardAfterFirst_first_block ops self data i h
+
+theorem forward_second_block_full_eq (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : ∀ i : Nat, boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true → getD ops.undefined (forwardDataCompleted ops self data) i = forwardSecondElem ops self.fractal_scale self.dim data i := fun i h => forwardDataCompleted_second_block ops self data i h h1 h2
+
+theorem forward_output_full_eq (ops : F32Ops) (self : OFTB ops) (data : List ops.F32)
+    (h0 : usizeDoubleFits self.dim = true)
+    (h1 : lenEnough self.dim data.length = true)
+    (h2 : bufferFits self.dim = true) :
+    MatchesZigForward ops self data (forwardDataCompleted ops self data) :=
+  And.intro
+    (forwardDataCompleted_length ops self data)
+    (And.intro
+      (fun i h => forwardDataCompleted_first_block ops self data i h h1 h2)
+      (And.intro
+        (fun i h => forwardDataCompleted_second_block ops self data i h h1 h2)
+        (fun i h => forwardDataCompleted_tail_spec ops self data i h h1 h2)))
+
+theorem backward_first_block_full_eq (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : ∀ i : Nat, natLtBool i self.dim = true → getD ops.undefined (backwardAfterSecond ops self data) i = getD ops.undefined data i := fun i h => backwardAfterSecond_first_block ops self data i h
+
+theorem backward_second_block_full_eq (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : ∀ i : Nat, boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true → getD ops.undefined (backwardDataCompleted ops self data) i = backwardSecondElem ops self.fractal_scale self.dim data i := fun i h => backwardDataCompleted_second_block ops self data i h h1 h2
+
+theorem backward_output_full_eq (ops : F32Ops) (self : OFTB ops) (data : List ops.F32)
+    (h0 : usizeDoubleFits self.dim = true)
+    (h1 : lenEnough self.dim data.length = true)
+    (h2 : bufferFits self.dim = true) :
+    MatchesZigBackward ops self data (backwardDataCompleted ops self data) :=
+  And.intro
+    (backwardDataCompleted_length ops self data)
+    (And.intro
+      (fun i h => backwardDataCompleted_first_block ops self data i h h1 h2)
+      (And.intro
+        (fun i h => backwardDataCompleted_second_block ops self data i h h1 h2)
+        (fun i h => backwardDataCompleted_tail_spec ops self data i h h1 h2)))
+
+theorem zigStructOFTB_fields (ops : F32Ops) (self : OFTB ops) :
+    ∃ (s : ops.F32) (d : Nat), self.fractal_scale = s ∧ self.dim = d :=
+  Exists.intro self.fractal_scale
+    (Exists.intro self.dim
+      (And.intro (Eq.refl self.fractal_scale) (Eq.refl self.dim)))
+
+theorem zigInitCorrect (ops : F32Ops) (d : Nat) :
+    (OFTB.init ops d).fractal_scale = ops.lit70710678 ∧
+    (OFTB.init ops d).dim = d :=
+  And.intro (Eq.refl ops.lit70710678) (Eq.refl d)
+
+theorem zigForwardLenCheck (ops : F32Ops) (self : OFTB ops) (x : Tensor ops)
+    (h : lenEnough self.dim x.data.length = false) :
+    (forwardInPlace ops self x).branch = RunBranch.lengthTooShort ∨
+    (forwardInPlace ops self x).branch = RunBranch.arithmeticOverflow :=
+  match (usizeDoubleFits self.dim) with
+  | false => Or.inr (Eq.refl RunBranch.arithmeticOverflow)
+  | true  =>
+    match h with
+    | Eq.refl =>
+      Or.inl (match (usizeDoubleFits self.dim) with
+        | false => Eq.refl RunBranch.arithmeticOverflow
+        | true  => Eq.refl RunBranch.lengthTooShort)
+
+theorem zigForwardBufCheck (ops : F32Ops) (self : OFTB ops) (x : Tensor ops)
+    (h0 : usizeDoubleFits self.dim = true)
+    (h1 : lenEnough self.dim x.data.length = true)
+    (h2 : bufferFits self.dim = false) :
+    (forwardInPlace ops self x).branch = RunBranch.bufferTooSmall :=
+  forwardInPlace_buffer_too_small_branch ops self x h0 h1 h2
+
+theorem zigForwardCopyLoop (ops : F32Ops) (self : OFTB ops)
+    (x : Tensor ops) (i : Nat) (h : i < 16384)
+    (hc : i < self.dim) :
+    let buf0 := FixedBuffer16384.ofUndefined ops
+    let buf1 := copyToFixedBuffer ops x.data 0 buf0 0 self.dim
+    buf1.get (mkBufIndex i h) =
+      getD ops.undefined x.data i :=
+  let buf0 := FixedBuffer16384.ofUndefined ops
+  Nat.rec
+    (show copyToFixedBuffer ops x.data 0 buf0 0 0 |>.get (mkBufIndex i h) =
+         getD ops.undefined x.data i from
+       Eq.refl (FixedBuffer16384.ofUndefined ops |>.get (mkBufIndex i h)))
+    (fun k ih =>
+      Eq.refl (getD ops.undefined x.data i))
+    self.dim
+
+theorem zigForwardFirstLoopStep (ops : F32Ops) (self : OFTB ops)
+    (data : List ops.F32) (i : Nat) :
+    let newVal := forwardFirstValue ops self.fractal_scale self.dim data i
+    newVal = ops.add
+               (getD ops.undefined data i)
+               (ops.mul (getD ops.undefined data (self.dim + i)) self.fractal_scale) :=
+  Eq.refl (ops.add
+    (getD ops.undefined data i)
+    (ops.mul (getD ops.undefined data (self.dim + i)) self.fractal_scale))
+
+theorem zigForwardSecondLoopStep (ops : F32Ops) (self : OFTB ops)
+    (buf data : List ops.F32) (i : Nat) :
+    let newVal := forwardSecondValue ops self.fractal_scale self.dim buf data i
+    newVal = ops.add
+               (getD ops.undefined data (self.dim + i))
+               (ops.mul (ops.mul (getD ops.undefined buf i) self.fractal_scale) ops.lit05) :=
+  Eq.refl (ops.add
+    (getD ops.undefined data (self.dim + i))
+    (ops.mul (ops.mul (getD ops.undefined buf i) self.fractal_scale) ops.lit05))
+
+theorem zigBackwardSecondLoopStep (ops : F32Ops) (self : OFTB ops)
+    (data : List ops.F32) (i : Nat) :
+    let newVal := backwardSecondValue ops self.fractal_scale self.dim data i
+    newVal = ops.add
+               (getD ops.undefined data (self.dim + i))
+               (ops.mul (getD ops.undefined data i) self.fractal_scale) :=
+  Eq.refl (ops.add
+    (getD ops.undefined data (self.dim + i))
+    (ops.mul (getD ops.undefined data i) self.fractal_scale))
+
+theorem zigBackwardFirstLoopStep (ops : F32Ops) (self : OFTB ops)
+    (buf data : List ops.F32) (i : Nat) :
+    let newVal := backwardFirstValue ops self.fractal_scale buf data i
+    newVal = ops.add
+               (getD ops.undefined data i)
+               (ops.mul (ops.mul (getD ops.undefined buf i) self.fractal_scale) ops.lit05) :=
+  Eq.refl (ops.add
+    (getD ops.undefined data i)
+    (ops.mul (ops.mul (getD ops.undefined buf i) self.fractal_scale) ops.lit05))
+
+theorem forwardOutputSpec_first (ops : F32Ops) (self : OFTB ops)
+    (x : Tensor ops)
+    (h0 : usizeDoubleFits self.dim = true)
+    (h1 : lenEnough self.dim x.data.length = true)
+    (h2 : bufferFits self.dim = true)
+    (i : Nat) :
+    let out := (forwardInPlace ops self x).tensor.data
+    getD ops.undefined out i =
+      getD ops.undefined
+        (forwardDataCompleted ops self x.data) i :=
+  congrArg (fun d => getD ops.undefined d i)
+    (forwardInPlace_completed_data ops self x h0 h1 h2)
+
+theorem backwardOutputSpec_first (ops : F32Ops) (self : OFTB ops)
+    (grad : List ops.F32)
+    (h0 : usizeDoubleFits self.dim = true)
+    (h1 : lenEnough self.dim grad.length = true)
+    (h2 : bufferFits self.dim = true)
+    (i : Nat) :
+    getD ops.undefined (backwardInPlace ops self grad).data i =
+      getD ops.undefined
+        (backwardDataCompleted ops self grad) i :=
+  congrArg (fun d => getD ops.undefined d i)
+    (backwardInPlace_completed_data ops self grad h0 h1 h2)
+
+theorem forwardInPlace_memorySafe (ops : F32Ops) (self : OFTB ops)
+    (x : Tensor ops)
+    (h0 : usizeDoubleFits self.dim = true)
+    (h1 : lenEnough self.dim x.data.length = true)
+    (h2 : bufferFits self.dim = true) :
+    (forwardInPlace ops self x).tensor.data.length = x.data.length ∧
+    (forwardInPlace ops self x).branch = RunBranch.completed ∧
+    sliceValidIn (firstSlice self.dim)
+      (forwardInPlace ops self x).tensor.data.length = true ∧
+    sliceValidIn (secondSlice self.dim)
+      (forwardInPlace ops self x).tensor.data.length = true :=
+  And.intro
+    (forwardInPlace_length ops self x)
+    (And.intro
+      (forwardInPlace_completed_branch ops self x h0 h1 h2)
+      (And.intro
+        (Eq.trans
+          (congrArg (sliceValidIn (firstSlice self.dim))
+            (forwardInPlace_length ops self x))
+          (forward_completed_first_slice_valid ops self x h1))
+        (Eq.trans
+          (congrArg (sliceValidIn (secondSlice self.dim))
+            (forwardInPlace_length ops self x))
+          (forward_completed_second_slice_valid ops self x h1))))
+
+theorem backwardInPlace_memorySafe (ops : F32Ops) (self : OFTB ops)
+    (grad : List ops.F32)
+    (h0 : usizeDoubleFits self.dim = true)
+    (h1 : lenEnough self.dim grad.length = true)
+    (h2 : bufferFits self.dim = true) :
+    (backwardInPlace ops self grad).data.length = grad.length ∧
+    (backwardInPlace ops self grad).branch = RunBranch.completed ∧
+    sliceValidIn (firstSlice self.dim)
+      (backwardInPlace ops self grad).data.length = true ∧
+    sliceValidIn (secondSlice self.dim)
+      (backwardInPlace ops self grad).data.length = true :=
+  And.intro
+    (backwardInPlace_length ops self grad)
+    (And.intro
+      (backwardInPlace_completed_branch ops self grad h0 h1 h2)
+      (And.intro
+        (Eq.trans
+          (congrArg (sliceValidIn (firstSlice self.dim))
+            (backwardInPlace_length ops self grad))
+          (backward_completed_first_slice_valid ops self grad h1))
+        (Eq.trans
+          (congrArg (sliceValidIn (secondSlice self.dim))
+            (backwardInPlace_length ops self grad))
+          (backward_completed_second_slice_valid ops self grad h1))))
 
 end ZigOFTB
