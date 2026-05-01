@@ -1,4 +1,3 @@
-```lean
 import Std.Data.Nat.Basic
 import Std.Data.List.Basic
 
