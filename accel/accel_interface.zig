@@ -34,7 +34,9 @@ pub const FutharkContext = struct {
         const cfg = futhark.futhark_context_config_new();
         if (cfg == null) return AccelError.FutharkConfigFailed;
 
-        futhark.futhark_context_config_set_device(cfg, device_id);
+        var buf: [32]u8 = undefined;
+        const device_str = std.fmt.bufPrintZ(&buf, "{d}", .{device_id}) catch return AccelError.FutharkConfigFailed;
+        futhark.futhark_context_config_set_device(cfg, device_str.ptr);
         futhark.futhark_context_config_set_default_group_size(cfg, 256);
         futhark.futhark_context_config_set_default_num_groups(cfg, 128);
         futhark.futhark_context_config_set_default_tile_size(cfg, 32);
@@ -61,7 +63,7 @@ pub const FutharkContext = struct {
 
     pub fn sync(self: *Self) AccelError!void {
         if (self.ctx == null) return AccelError.NullPointer;
-        if (futhark.futhark_context_sync(self.ctx) != 0) {
+        if (futhark.futhark_context_sync(self.ctx.?) != 0) {
             return AccelError.FutharkSyncFailed;
         }
     }
@@ -70,7 +72,7 @@ pub const FutharkContext = struct {
         if (self.ctx == null) return AccelError.NullPointer;
         if (array.arr == null) return AccelError.NullPointer;
 
-        const raw_ptr = futhark.futhark_values_raw_f16_2d(self.ctx, array.arr);
+        const raw_ptr = futhark.futhark_values_raw_f16_2d(self.ctx.?, array.arr.?);
         if (raw_ptr == null) {
             return AccelError.NullPointer;
         }
@@ -126,13 +128,13 @@ pub const FutharkArray1DF16 = struct {
 
     const Self = @This();
 
-    pub fn newFromFlat(ctx: *FutharkContext, flat_data: []const f16, length: usize) AccelError!Self {
+    pub fn newFromFlat(ctx: *FutharkContext, flat_data:[]const f16, length: usize) AccelError!Self {
         if (ctx.ctx == null) return AccelError.NullPointer;
         if (length == 0) return AccelError.InvalidDimensions;
         if (flat_data.len != length) return AccelError.InvalidDimensions;
 
         const arr = futhark.futhark_new_f16_1d(
-            ctx.ctx,
+            ctx.ctx.?,
             @ptrCast(flat_data.ptr),
             @intCast(length),
         );
@@ -150,7 +152,7 @@ pub const FutharkArray1DF16 = struct {
         @memset(zeros, 0);
 
         const arr = futhark.futhark_new_f16_1d(
-            ctx.ctx,
+            ctx.ctx.?,
             @ptrCast(zeros.ptr),
             @intCast(length),
         );
@@ -167,13 +169,13 @@ pub const FutharkArray1DF16 = struct {
         const buf = allocator.alloc(f16, self.len) catch return AccelError.AllocationFailed;
         errdefer allocator.free(buf);
 
-        const result = futhark.futhark_values_f16_1d(ctx.ctx, self.arr, @ptrCast(buf.ptr));
+        const result = futhark.futhark_values_f16_1d(ctx.ctx.?, self.arr.?, @ptrCast(buf.ptr));
         if (result != 0) {
             allocator.free(buf);
             return AccelError.FutharkValuesFailed;
         }
 
-        const sync_result = futhark.futhark_context_sync(ctx.ctx);
+        const sync_result = futhark.futhark_context_sync(ctx.ctx.?);
         if (sync_result != 0) {
             allocator.free(buf);
             return AccelError.FutharkSyncFailed;
@@ -184,7 +186,9 @@ pub const FutharkArray1DF16 = struct {
 
     pub fn free(self: *Self, ctx: *FutharkContext) void {
         if (self.arr) |arr| {
-            _ = futhark.futhark_free_f16_1d(ctx.ctx, arr);
+            if (ctx.ctx) |c| {
+                _ = futhark.futhark_free_f16_1d(c, arr);
+            }
             self.arr = null;
             self.len = 0;
         }
@@ -198,7 +202,7 @@ pub const FutharkArray2DF16 = struct {
 
     const Self = @This();
 
-    pub fn new(ctx: *FutharkContext, data: []const []const f16) AccelError!Self {
+    pub fn new(ctx: *FutharkContext, data: []const[]const f16) AccelError!Self {
         if (ctx.ctx == null) return AccelError.NullPointer;
         if (data.len == 0) return AccelError.InvalidDimensions;
 
@@ -221,7 +225,7 @@ pub const FutharkArray2DF16 = struct {
         }
 
         const arr = futhark.futhark_new_f16_2d(
-            ctx.ctx,
+            ctx.ctx.?,
             @ptrCast(flat_data.items.ptr),
             @intCast(rows),
             @intCast(cols),
@@ -231,13 +235,13 @@ pub const FutharkArray2DF16 = struct {
         return Self{ .arr = arr, .rows = rows, .cols = cols };
     }
 
-    pub fn newFromFlat(ctx: *FutharkContext, flat_data: []const f16, rows: usize, cols: usize) AccelError!Self {
+    pub fn newFromFlat(ctx: *FutharkContext, flat_data:[]const f16, rows: usize, cols: usize) AccelError!Self {
         if (ctx.ctx == null) return AccelError.NullPointer;
         if (rows == 0 or cols == 0) return AccelError.InvalidDimensions;
         if (flat_data.len != rows * cols) return AccelError.InvalidDimensions;
 
         const arr = futhark.futhark_new_f16_2d(
-            ctx.ctx,
+            ctx.ctx.?,
             @ptrCast(flat_data.ptr),
             @intCast(rows),
             @intCast(cols),
@@ -257,7 +261,7 @@ pub const FutharkArray2DF16 = struct {
         @memset(zeros, 0);
 
         const arr = futhark.futhark_new_f16_2d(
-            ctx.ctx,
+            ctx.ctx.?,
             @ptrCast(zeros.ptr),
             @intCast(rows),
             @intCast(cols),
@@ -269,7 +273,9 @@ pub const FutharkArray2DF16 = struct {
 
     pub fn free(self: *Self, ctx: *FutharkContext) void {
         if (self.arr) |arr| {
-            _ = futhark.futhark_free_f16_2d(ctx.ctx, arr);
+            if (ctx.ctx) |c| {
+                _ = futhark.futhark_free_f16_2d(c, arr);
+            }
             self.arr = null;
             self.rows = 0;
             self.cols = 0;
@@ -280,12 +286,8 @@ pub const FutharkArray2DF16 = struct {
         if (ctx.ctx == null) return AccelError.NullPointer;
         if (self.arr == null) return AccelError.NullPointer;
 
-        var dims: [2]i64 = undefined;
-        if (futhark.futhark_shape_f16_2d(ctx.ctx, self.arr, &dims) != 0) {
-            return AccelError.FutharkShapeFailed;
-        }
-        const rows = @as(usize, @intCast(dims[0]));
-        const cols = @as(usize, @intCast(dims[1]));
+        const rows = self.rows;
+        const cols = self.cols;
 
         if (rows == 0 or cols == 0) {
             return allocator.alloc([]f16, 0) catch return AccelError.AllocationFailed;
@@ -294,7 +296,7 @@ pub const FutharkArray2DF16 = struct {
         const flat = allocator.alloc(f16, rows * cols) catch return AccelError.AllocationFailed;
         defer allocator.free(flat);
 
-        if (futhark.futhark_values_f16_2d(ctx.ctx, self.arr, @ptrCast(flat.ptr)) != 0) {
+        if (futhark.futhark_values_f16_2d(ctx.ctx.?, self.arr.?, @ptrCast(flat.ptr)) != 0) {
             return AccelError.FutharkValuesFailed;
         }
 
@@ -329,16 +331,16 @@ pub const FutharkArray2DF32 = struct {
         const rows = tensor.shape.dims[0];
         const cols = tensor.shape.dims[1];
         if (rows == 0 or cols == 0) return AccelError.InvalidDimensions;
-        const arr = futhark.futhark_new_f32_2d(ctx.ctx, tensor.data.ptr, @intCast(rows), @intCast(cols));
+        const arr = futhark.futhark_new_f32_2d(ctx.ctx.?, tensor.data.ptr, @intCast(rows), @intCast(cols));
         if (arr == null) return AccelError.FutharkArrayNewFailed;
         return Self{ .arr = arr, .rows = rows, .cols = cols };
     }
 
-    pub fn newFromFlat(ctx: *FutharkContext, data: []const f32, rows: usize, cols: usize) AccelError!Self {
+    pub fn newFromFlat(ctx: *FutharkContext, data:[]const f32, rows: usize, cols: usize) AccelError!Self {
         if (ctx.ctx == null) return AccelError.NullPointer;
         if (rows == 0 or cols == 0) return AccelError.InvalidDimensions;
         if (data.len != rows * cols) return AccelError.InvalidDimensions;
-        const arr = futhark.futhark_new_f32_2d(ctx.ctx, data.ptr, @intCast(rows), @intCast(cols));
+        const arr = futhark.futhark_new_f32_2d(ctx.ctx.?, data.ptr, @intCast(rows), @intCast(cols));
         if (arr == null) return AccelError.FutharkArrayNewFailed;
         return Self{ .arr = arr, .rows = rows, .cols = cols };
     }
@@ -349,14 +351,16 @@ pub const FutharkArray2DF32 = struct {
         const zeros = allocator.alloc(f32, rows * cols) catch return AccelError.AllocationFailed;
         defer allocator.free(zeros);
         @memset(zeros, 0);
-        const arr = futhark.futhark_new_f32_2d(ctx.ctx, zeros.ptr, @intCast(rows), @intCast(cols));
+        const arr = futhark.futhark_new_f32_2d(ctx.ctx.?, zeros.ptr, @intCast(rows), @intCast(cols));
         if (arr == null) return AccelError.FutharkArrayNewFailed;
         return Self{ .arr = arr, .rows = rows, .cols = cols };
     }
 
     pub fn free(self: *Self, ctx: *FutharkContext) void {
         if (self.arr) |arr| {
-            futhark.futhark_free_f32_2d(ctx.ctx, arr);
+            if (ctx.ctx) |c| {
+                _ = futhark.futhark_free_f32_2d(c, arr);
+            }
             self.arr = null;
             self.rows = 0;
             self.cols = 0;
@@ -368,7 +372,7 @@ pub const FutharkArray2DF32 = struct {
         if (self.arr == null) return AccelError.NullPointer;
         const shape = [_]usize{ self.rows, self.cols };
         var tensor = core_tensor.Tensor.init(allocator, &shape) catch return AccelError.AllocationFailed;
-        if (futhark.futhark_values_f32_2d(ctx.ctx, self.arr, tensor.data.ptr) != 0) {
+        if (futhark.futhark_values_f32_2d(ctx.ctx.?, self.arr.?, tensor.data.ptr) != 0) {
             tensor.deinit();
             return AccelError.FutharkValuesFailed;
         }
@@ -387,14 +391,16 @@ pub const FutharkArray1DF32 = struct {
         if (tensor.shape.dims.len != 1) return AccelError.InvalidDimensions;
         const n = tensor.shape.dims[0];
         if (n == 0) return AccelError.InvalidDimensions;
-        const arr = futhark.futhark_new_f32_1d(ctx.ctx, tensor.data.ptr, @intCast(n));
+        const arr = futhark.futhark_new_f32_1d(ctx.ctx.?, tensor.data.ptr, @intCast(n));
         if (arr == null) return AccelError.FutharkArrayNewFailed;
         return Self{ .arr = arr, .len = n };
     }
 
     pub fn free(self: *Self, ctx: *FutharkContext) void {
         if (self.arr) |arr| {
-            futhark.futhark_free_f32_1d(ctx.ctx, arr);
+            if (ctx.ctx) |c| {
+                _ = futhark.futhark_free_f32_1d(c, arr);
+            }
             self.arr = null;
             self.len = 0;
         }
@@ -405,7 +411,7 @@ pub const FutharkArray1DF32 = struct {
         if (self.arr == null) return AccelError.NullPointer;
         const shape = [_]usize{self.len};
         var tensor = core_tensor.Tensor.init(allocator, &shape) catch return AccelError.AllocationFailed;
-        if (futhark.futhark_values_f32_1d(ctx.ctx, self.arr, tensor.data.ptr) != 0) {
+        if (futhark.futhark_values_f32_1d(ctx.ctx.?, self.arr.?, tensor.data.ptr) != 0) {
             tensor.deinit();
             return AccelError.FutharkValuesFailed;
         }
@@ -507,13 +513,13 @@ pub const RSFAccelerator = struct {
         const clip_max_bits: u16 = @bitCast(self.clip_max);
 
         const result = futhark.futhark_entry_rsf_forward(
-            self.ctx.ctx,
+            self.ctx.ctx.?,
             &output,
-            input.arr,
-            self.weights_s.arr,
-            self.weights_t.arr,
-            self.s_bias.arr,
-            self.t_bias.arr,
+            input.arr.?,
+            self.weights_s.arr.?,
+            self.weights_t.arr.?,
+            self.s_bias.arr.?,
+            self.t_bias.arr.?,
             clip_min_bits,
             clip_max_bits,
         );
@@ -564,7 +570,7 @@ pub const RSFAccelerator = struct {
         const clip_max_bits: u16 = @bitCast(self.clip_max);
 
         const result = futhark.futhark_entry_training_step(
-            self.ctx.ctx,
+            self.ctx.ctx.?,
             &new_ws,
             &new_wt,
             &new_sb,
@@ -574,16 +580,16 @@ pub const RSFAccelerator = struct {
             &new_vsb,
             &new_vtb,
             &loss,
-            inputs.arr,
-            targets.arr,
-            self.weights_s.arr,
-            self.weights_t.arr,
-            self.s_bias.arr,
-            self.t_bias.arr,
-            self.velocity_s.arr,
-            self.velocity_t.arr,
-            self.velocity_sb.arr,
-            self.velocity_tb.arr,
+            inputs.arr.?,
+            targets.arr.?,
+            self.weights_s.arr.?,
+            self.weights_t.arr.?,
+            self.s_bias.arr.?,
+            self.t_bias.arr.?,
+            self.velocity_s.arr.?,
+            self.velocity_t.arr.?,
+            self.velocity_sb.arr.?,
+            self.velocity_tb.arr.?,
             lr_bits,
             momentum_bits,
             clip_min_bits,
@@ -618,14 +624,14 @@ pub const RSFAccelerator = struct {
         self.velocity_sb.arr = new_vsb;
         self.velocity_tb.arr = new_vtb;
 
-        _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old_ws);
-        _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old_wt);
-        _ = futhark.futhark_free_f16_1d(self.ctx.ctx, old_sb);
-        _ = futhark.futhark_free_f16_1d(self.ctx.ctx, old_tb);
-        _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old_vs);
-        _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old_vt);
-        _ = futhark.futhark_free_f16_1d(self.ctx.ctx, old_vsb);
-        _ = futhark.futhark_free_f16_1d(self.ctx.ctx, old_vtb);
+        _ = futhark.futhark_free_f16_2d(self.ctx.ctx.?, old_ws.?);
+        _ = futhark.futhark_free_f16_2d(self.ctx.ctx.?, old_wt.?);
+        _ = futhark.futhark_free_f16_1d(self.ctx.ctx.?, old_sb.?);
+        _ = futhark.futhark_free_f16_1d(self.ctx.ctx.?, old_tb.?);
+        _ = futhark.futhark_free_f16_2d(self.ctx.ctx.?, old_vs.?);
+        _ = futhark.futhark_free_f16_2d(self.ctx.ctx.?, old_vt.?);
+        _ = futhark.futhark_free_f16_1d(self.ctx.ctx.?, old_vsb.?);
+        _ = futhark.futhark_free_f16_1d(self.ctx.ctx.?, old_vtb.?);
 
         const loss_f16: f16 = @bitCast(loss);
         return loss_f16;
@@ -642,9 +648,9 @@ pub const RSFAccelerator = struct {
 
         var new_ws: ?*futhark.struct_futhark_f16_2d = null;
         const result_s = futhark.futhark_entry_scale_weights_inplace(
-            self.ctx.ctx,
+            self.ctx.ctx.?,
             &new_ws,
-            self.weights_s.arr,
+            self.weights_s.arr.?,
             scale_bits,
         );
 
@@ -655,14 +661,14 @@ pub const RSFAccelerator = struct {
         if (new_ws != null) {
             const old = self.weights_s.arr;
             self.weights_s.arr = new_ws;
-            _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old);
+            _ = futhark.futhark_free_f16_2d(self.ctx.ctx.?, old.?);
         }
 
         var new_wt: ?*futhark.struct_futhark_f16_2d = null;
         const result_t = futhark.futhark_entry_scale_weights_inplace(
-            self.ctx.ctx,
+            self.ctx.ctx.?,
             &new_wt,
-            self.weights_t.arr,
+            self.weights_t.arr.?,
             scale_bits,
         );
 
@@ -673,7 +679,7 @@ pub const RSFAccelerator = struct {
         if (new_wt != null) {
             const old = self.weights_t.arr;
             self.weights_t.arr = new_wt;
-            _ = futhark.futhark_free_f16_2d(self.ctx.ctx, old);
+            _ = futhark.futhark_free_f16_2d(self.ctx.ctx.?, old.?);
         }
     }
 
@@ -692,7 +698,7 @@ pub const RSFAccelerator = struct {
         return self.ctx.sync();
     }
 
-    pub fn setWeightsS(self: *Self, data: []const f16, rows: usize, cols: usize) AccelError!void {
+    pub fn setWeightsS(self: *Self, data:[]const f16, rows: usize, cols: usize) AccelError!void {
         if (!self.initialized) return AccelError.NullPointer;
         if (rows == 0 or cols == 0) return AccelError.InvalidDimensions;
         if (data.len != rows * cols) return AccelError.InvalidDimensions;
@@ -701,7 +707,7 @@ pub const RSFAccelerator = struct {
         self.weights_s = try FutharkArray2DF16.newFromFlat(&self.ctx, data, rows, cols);
     }
 
-    pub fn setWeightsT(self: *Self, data: []const f16, rows: usize, cols: usize) AccelError!void {
+    pub fn setWeightsT(self: *Self, data:[]const f16, rows: usize, cols: usize) AccelError!void {
         if (!self.initialized) return AccelError.NullPointer;
         if (rows == 0 or cols == 0) return AccelError.InvalidDimensions;
         if (data.len != rows * cols) return AccelError.InvalidDimensions;
@@ -710,7 +716,7 @@ pub const RSFAccelerator = struct {
         self.weights_t = try FutharkArray2DF16.newFromFlat(&self.ctx, data, rows, cols);
     }
 
-    pub fn setSBias(self: *Self, data: []const f16, length: usize) AccelError!void {
+    pub fn setSBias(self: *Self, data:[]const f16, length: usize) AccelError!void {
         if (!self.initialized) return AccelError.NullPointer;
         if (length == 0) return AccelError.InvalidDimensions;
         if (data.len != length) return AccelError.InvalidDimensions;
@@ -719,7 +725,7 @@ pub const RSFAccelerator = struct {
         self.s_bias = try FutharkArray1DF16.newFromFlat(&self.ctx, data, length);
     }
 
-    pub fn setTBias(self: *Self, data: []const f16, length: usize) AccelError!void {
+    pub fn setTBias(self: *Self, data:[]const f16, length: usize) AccelError!void {
         if (!self.initialized) return AccelError.NullPointer;
         if (length == 0) return AccelError.InvalidDimensions;
         if (data.len != length) return AccelError.InvalidDimensions;
@@ -744,9 +750,9 @@ pub const RSFAccelerator = struct {
         defer allocator.free(f16_data);
         {
             var i: usize = 0;
-            while (i < input.data.len) : (i += 1) {
-                const v = input.data[i];
-                f16_data[i] = @floatCast(v);
+            const total = rows * cols;
+            while (i < total) : (i += 1) {
+                f16_data[i] = @floatCast(input.data[i]);
             }
         }
         var f16_input = try FutharkArray2DF16.newFromFlat(&self.ctx, f16_data, rows, cols);
@@ -760,7 +766,7 @@ pub const RSFAccelerator = struct {
             return AccelError.AllocationFailed;
         };
         defer allocator.free(out_f16);
-        if (futhark.futhark_values_f16_2d(self.ctx.ctx, output.arr, @ptrCast(out_f16.ptr)) != 0) {
+        if (futhark.futhark_values_f16_2d(self.ctx.ctx.?, output.arr.?, @ptrCast(out_f16.ptr)) != 0) {
             result.deinit();
             return AccelError.FutharkValuesFailed;
         }
@@ -795,7 +801,7 @@ pub const GPUOps = struct {
         defer fb.free(&self.ctx);
 
         var out_arr: ?*futhark.struct_futhark_f32_2d = null;
-        if (futhark.futhark_entry_matmul(self.ctx.ctx, &out_arr, fa.arr, fb.arr) != 0) {
+        if (futhark.futhark_entry_matmul(self.ctx.ctx.?, &out_arr, fa.arr.?, fb.arr.?) != 0) {
             return AccelError.FutharkForwardFailed;
         }
         if (out_arr == null) return AccelError.NullPointer;
