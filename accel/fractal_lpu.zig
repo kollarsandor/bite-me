@@ -39,9 +39,9 @@ pub const FractalTile = struct {
     level: usize,
     base_addr: u64,
     size: usize,
-    children: []?*FractalTile,
+    children:[]?*FractalTile,
     arbiter_id: u32,
-    compute_units: []ComputeUnit,
+    compute_units:[]ComputeUnit,
     coherence: f64,
     entanglement_map: std.AutoHashMap(u64, f64),
     allocator: Allocator,
@@ -51,9 +51,10 @@ pub const FractalTile = struct {
     pub fn init(allocator: Allocator, level: usize, base: u64, size: usize, coherence: f64) !Self {
         const clamped_coherence = @max(0.0, @min(1.0, coherence));
         const safe_level: u5 = @intCast(@min(level, 31));
-        const arbiter_id: u32 = @intCast(level);
+        const arbiter_id: u32 = safe_level;
         const num_children: usize = 4;
         const children = try allocator.alloc(?*FractalTile, num_children);
+        errdefer allocator.free(children);
         @memset(children, null);
         const clamped_level: u6 = @intCast(@min(level, 6));
         const num_cu: usize = @as(usize, 1) << clamped_level;
@@ -61,9 +62,8 @@ pub const FractalTile = struct {
         const cu_size = if (num_cu > 0) size / num_cu else size;
         var i: usize = 0;
         while (i < num_cu) : (i += 1) {
-            compute_units[i] = ComputeUnit.init(i, base + i * cu_size);
+            compute_units[i] = ComputeUnit.init(i, base + @as(u64, i * cu_size));
         }
-        _ = safe_level;
         return Self{
             .level = level,
             .base_addr = base,
@@ -92,15 +92,15 @@ pub const FractalTile = struct {
     pub fn subdivide(self: *Self, config: FractalDimensionConfig) !void {
         if (self.size <= config.min_tile_size) return;
         if (self.level >= config.box_counting_levels) return;
-        if (self.children.len < 4) return;
         const child_size = self.size / 4;
         if (child_size < config.min_tile_size) return;
         var idx: usize = 0;
         while (idx < 4) : (idx += 1) {
             if (self.children[idx] != null) continue;
-            const child_base = self.base_addr + idx * child_size;
+            const child_base = self.base_addr + @as(u64, idx * child_size);
             const child_coherence = self.coherence * 0.9;
             const child_ptr = try self.allocator.create(FractalTile);
+            errdefer self.allocator.destroy(child_ptr);
             child_ptr.* = try FractalTile.init(self.allocator, self.level + 1, child_base, child_size, child_coherence);
             self.children[idx] = child_ptr;
         }
@@ -127,9 +127,30 @@ pub const FractalTile = struct {
         }
     }
 
-    pub fn executeFixedPoint(self: *Self, input: []const i32, output: []i32) void {
+    pub fn executeFixedPoint(self: *Self, input: []const i32, output:[]i32) void {
         if (input.len == 0) return;
         if (output.len < input.len) return;
+
+        var active_children: usize = 0;
+        for (self.children) |child_opt| {
+            if (child_opt != null) active_children += 1;
+        }
+
+        if (active_children > 0) {
+            const chunk_size = if (input.len >= active_children) input.len / active_children else 1;
+            var child_idx: usize = 0;
+            for (self.children) |child_opt| {
+                if (child_opt) |child| {
+                    const start = child_idx * chunk_size;
+                    if (start >= input.len) break;
+                    const end = if (child_idx == active_children - 1) input.len else @min((child_idx + 1) * chunk_size, input.len);
+                    child.executeFixedPoint(input[start..end], output[start..end]);
+                    child_idx += 1;
+                }
+            }
+            return;
+        }
+
         const num_cu = self.compute_units.len;
         if (num_cu == 0) {
             var idx: usize = 0;
@@ -178,6 +199,7 @@ pub const FractalLPU = struct {
         var config = FractalDimensionConfig.default(total_mem);
         config.hausdorff_dim = clamped_hausdorff;
         const root = try allocator.create(FractalTile);
+        errdefer allocator.destroy(root);
         root.* = try FractalTile.init(allocator, 0, 0, total_mem, 1.0);
         return Self{
             .root_tile = root,
@@ -193,10 +215,14 @@ pub const FractalLPU = struct {
     }
 
     pub fn buildHierarchy(self: *Self) !void {
-        try self.root_tile.subdivide(self.config);
-        for (self.root_tile.children) |child_opt| {
+        try self.buildTileRecursive(self.root_tile);
+    }
+
+    fn buildTileRecursive(self: *Self, tile: *FractalTile) !void {
+        try tile.subdivide(self.config);
+        for (tile.children) |child_opt| {
             if (child_opt) |child| {
-                try child.subdivide(self.config);
+                try self.buildTileRecursive(child);
             }
         }
     }
@@ -208,12 +234,10 @@ pub const FractalLPU = struct {
     fn mapNodeToTile(self: *Self, tile: *FractalTile, hash: u64, weight: f64) !void {
         try tile.mapSSRGNode(hash, weight);
         if (weight > self.config.coherence_threshold) {
-            for (tile.children) |child_opt| {
-                if (child_opt) |child| {
-                    const child_weight = weight * 0.9;
-                    try self.mapNodeToTile(child, hash, child_weight);
-                    break;
-                }
+            const child_idx = hash % 4;
+            if (tile.children[child_idx]) |child| {
+                const child_weight = weight * 0.9;
+                try self.mapNodeToTile(child, hash, child_weight);
             }
         }
     }
@@ -231,22 +255,4 @@ pub const FractalLPU = struct {
         }
     }
 
-    pub fn processFixedPointBatch(self: *Self, inputs: []const i32, outputs: []i32) void {
-        if (outputs.len < inputs.len) return;
-        self.root_tile.executeFixedPoint(inputs, outputs);
-    }
-
-    pub fn getTotalComputeUnits(self: *Self) usize {
-        return self.countComputeUnits(self.root_tile);
-    }
-
-    fn countComputeUnits(self: *Self, tile: *FractalTile) usize {
-        var count = tile.compute_units.len;
-        for (tile.children) |child_opt| {
-            if (child_opt) |child| {
-                count += self.countComputeUnits(child);
-            }
-        }
-        return count;
-    }
-};
+    pub fn processFixedPointBatch(self: *Self, inputs:[]const i32, outputs:
