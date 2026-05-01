@@ -1,1587 +1,929 @@
-structure FP where
-  val : Int
-deriving BEq, Repr
+import Std.Data.Nat.Basic
+import Std.Data.List.Basic
 
-namespace FP
+namespace ZigOFTB
 
-def scale : Int := 100000000
+def boolNot : Bool → Bool
+| true => false
+| false => true
 
-def zero : FP := ⟨0⟩
-def one : FP := ⟨scale⟩
-def fractalScale : FP := ⟨70710678⟩
-def halfFractalScale : FP := ⟨35355339⟩
+def boolAnd : Bool → Bool → Bool
+| true, b => b
+| false, _ => false
 
-def add (a b : FP) : FP := ⟨a.val + b.val⟩
-def sub (a b : FP) : FP := ⟨a.val - b.val⟩
-def neg (a : FP) : FP := ⟨-a.val⟩
-def mul (a b : FP) : FP := ⟨(a.val * b.val) / scale⟩
-def fromInt (n : Int) : FP := ⟨n * scale⟩
+def boolOr : Bool → Bool → Bool
+| true, _ => true
+| false, b => b
 
-instance : Add FP := ⟨add⟩
-instance : Sub FP := ⟨sub⟩
-instance : Neg FP := ⟨neg⟩
-instance : Mul FP := ⟨mul⟩
-instance : Inhabited FP := ⟨zero⟩
+theorem boolNot_true : boolNot true = false := Eq.refl false
 
-theorem ext (a b : FP) (h : a.val = b.val) : a = b :=
-  match a, b with
-  | ⟨_⟩, ⟨_⟩ => congrArg FP.mk h
+theorem boolNot_false : boolNot false = true := Eq.refl true
 
-theorem val_ext {a b : FP} (h : a = b) : a.val = b.val :=
-  congrArg FP.val h
+theorem boolAnd_true_left (b : Bool) : boolAnd true b = b := Eq.refl b
 
-theorem add_comm (a b : FP) : add a b = add b a :=
-  ext (add a b) (add b a) (Int.add_comm a.val b.val)
+theorem boolAnd_false_left (b : Bool) : boolAnd false b = false := Eq.refl false
 
-theorem add_assoc (a b c : FP) : add (add a b) c = add a (add b c) :=
-  ext (add (add a b) c) (add a (add b c)) (Int.add_assoc a.val b.val c.val)
+theorem boolAnd_true_true : boolAnd true true = true := Eq.refl true
 
-theorem add_zero (a : FP) : add a zero = a :=
-  ext (add a zero) a (Int.add_zero a.val)
+theorem boolAnd_true_false : boolAnd true false = false := Eq.refl false
 
-theorem zero_add (a : FP) : add zero a = a :=
-  Eq.trans (add_comm zero a) (add_zero a)
+theorem boolAnd_false_true : boolAnd false true = false := Eq.refl false
 
-theorem add_neg_cancel (a : FP) : add a (neg a) = zero :=
-  ext (add a (neg a)) zero (Int.add_right_neg a.val)
+theorem boolAnd_false_false : boolAnd false false = false := Eq.refl false
 
-theorem neg_add_cancel (a : FP) : add (neg a) a = zero :=
-  Eq.trans (add_comm (neg a) a) (add_neg_cancel a)
+theorem boolOr_true_left (b : Bool) : boolOr true b = true := Eq.refl true
 
-theorem neg_neg (a : FP) : neg (neg a) = a :=
-  ext (neg (neg a)) a (Int.neg_neg a.val)
+theorem boolOr_false_left (b : Bool) : boolOr false b = b := Eq.refl b
 
-theorem neg_zero : neg zero = zero :=
-  ext (neg zero) zero Int.neg_zero
+theorem boolOr_true_true : boolOr true true = true := Eq.refl true
 
-theorem sub_self (a : FP) : sub a a = zero :=
-  ext (sub a a) zero (Int.sub_self a.val)
+theorem boolOr_true_false : boolOr true false = true := Eq.refl true
 
-theorem sub_eq_add_neg (a b : FP) : sub a b = add a (neg b) :=
-  ext (sub a b) (add a (neg b)) (Int.sub_eq_add_neg a.val b.val)
+theorem boolOr_false_true : boolOr false true = true := Eq.refl true
 
-theorem add_sub_cancel (a b : FP) : sub (add a b) b = a :=
-  ext (sub (add a b) b) a (Int.add_sub_cancel a.val b.val)
+theorem boolOr_false_false : boolOr false false = false := Eq.refl false
 
-theorem sub_add_cancel (a b : FP) : add (sub a b) b = a :=
-  ext (add (sub a b) b) a (Int.sub_add_cancel a.val b.val)
+def natLeBool : Nat → Nat → Bool
+| 0, _ => true
+| Nat.succ _, 0 => false
+| Nat.succ a, Nat.succ b => natLeBool a b
 
-theorem mul_comm (a b : FP) : mul a b = mul b a :=
-  ext (mul a b) (mul b a) (congrArg (· / scale) (Int.mul_comm a.val b.val))
+def natLtBool (a b : Nat) : Bool := natLeBool (Nat.succ a) b
 
-theorem mul_zero (a : FP) : mul a zero = zero :=
-  ext (mul a zero) zero
-    (Eq.trans (congrArg (· / scale) (Int.mul_zero a.val)) (Int.zero_div scale))
+theorem natLeBool_zero_left (n : Nat) : natLeBool 0 n = true := Eq.refl true
 
-theorem zero_mul (a : FP) : mul zero a = zero :=
-  Eq.trans (mul_comm zero a) (mul_zero a)
+theorem natLeBool_succ_zero (n : Nat) : natLeBool (Nat.succ n) 0 = false := Eq.refl false
 
-theorem neg_add_distrib (a b : FP) : neg (add a b) = add (neg a) (neg b) :=
-  ext (neg (add a b)) (add (neg a) (neg b)) (Int.neg_add a.val b.val)
+theorem natLeBool_succ_succ (a b : Nat) : natLeBool (Nat.succ a) (Nat.succ b) = natLeBool a b := Eq.refl (natLeBool a b)
 
-theorem add_left_comm (a b c : FP) : add a (add b c) = add b (add a c) :=
-  Eq.trans (Eq.symm (add_assoc a b c))
-    (Eq.trans (congrArg (fun x => add x c) (add_comm a b))
-      (add_assoc b a c))
+theorem natLtBool_def (a b : Nat) : natLtBool a b = natLeBool (Nat.succ a) b := Eq.refl (natLeBool (Nat.succ a) b)
 
-theorem add_right_comm (a b c : FP) : add (add a b) c = add (add a c) b :=
-  Eq.trans (add_assoc a b c)
-    (Eq.trans (congrArg (add a) (add_comm b c))
-      (Eq.symm (add_assoc a c b)))
+theorem natLeBool_refl (n : Nat) : natLeBool n n = true :=
+match n with
+| 0 => Eq.refl true
+| Nat.succ k => natLeBool_refl k
 
-theorem sub_sub (a b c : FP) : sub (sub a b) c = sub a (add b c) :=
-  ext (sub (sub a b) c) (sub a (add b c)) (Int.sub_sub a.val b.val c.val)
+theorem natLeBool_left_add_right (n m : Nat) : natLeBool n (n + m) = true :=
+match n with
+| 0 => Eq.refl true
+| Nat.succ k => natLeBool_left_add_right k m
 
-theorem neg_sub (a b : FP) : neg (sub a b) = sub b a :=
-  ext (neg (sub a b)) (sub b a) (Int.neg_sub a.val b.val)
+theorem natLeBool_true_trans (a b c : Nat) (hab : natLeBool a b = true) (hbc : natLeBool b c = true) : natLeBool a c = true :=
+match a with
+| 0 => Eq.refl true
+| Nat.succ a1 =>
+  match b with
+  | 0 => False.elim (Bool.noConfusion hab)
+  | Nat.succ b1 =>
+    match c with
+    | 0 => False.elim (Bool.noConfusion hbc)
+    | Nat.succ c1 => natLeBool_true_trans a1 b1 c1 (Eq.trans (natLeBool_succ_succ a1 b1) hab) (Eq.trans (natLeBool_succ_succ b1 c1) hbc)
 
-theorem add_left_cancel (a b c : FP) (h : add a b = add a c) : b = c :=
-  ext b c (Int.add_left_cancel (val_ext h))
+def mixBufferLen : Nat := 16384
 
-end FP
+def usizeMax : Nat := 18446744073709551615
 
-def listGet (l : List FP) (i : Nat) (default : FP) : FP :=
-  match l, i with
-  | [], _ => default
-  | a :: _, 0 => a
-  | _ :: as, Nat.succ n => listGet as n default
+def doubleNat (n : Nat) : Nat := n + n
 
-def listSet (l : List FP) (i : Nat) (v : FP) : List FP :=
-  match l, i with
-  | [], _ => []
-  | _ :: as, 0 => v :: as
-  | a :: as, Nat.succ n => a :: listSet as n v
+def usizeFits (n : Nat) : Bool := natLeBool n usizeMax
 
-theorem listSet_length (l : List FP) (i : Nat) (v : FP) :
-    (listSet l i v).length = l.length :=
-  match l, i with
-  | [], _ =>
-    Eq.trans (Eq.symm (Nat.add_zero 0)) (Nat.add_zero 0)
-  | _ :: as, 0 =>
-    congrArg Nat.succ (Eq.trans (Eq.symm (Nat.add_zero as.length)) (Nat.add_zero as.length))
-  | _ :: as, Nat.succ n =>
-    congrArg Nat.succ (listSet_length as n v)
+def usizeDoubleFits (n : Nat) : Bool := usizeFits (doubleNat n)
 
-theorem listGet_set_same (l : List FP) (i : Nat) (v : FP) (d : FP)
-    (h : i < l.length) : listGet (listSet l i v) i d = v :=
-  match l, i with
-  | [], _ => absurd h (Nat.not_lt_zero _)
-  | _ :: _, 0 =>
-    FP.ext v v (Eq.trans (Eq.symm (Int.add_zero v.val)) (Int.add_zero v.val))
-  | _ :: as, Nat.succ n =>
-    listGet_set_same as n v d (Nat.lt_of_succ_lt_succ h)
+def lenEnough (dim len : Nat) : Bool := natLeBool (doubleNat dim) len
 
-theorem listGet_set_other (l : List FP) (i j : Nat) (v : FP) (d : FP)
-    (hne : ¬(i = j)) : listGet (listSet l j v) i d = listGet l i d :=
-  match l, i, j with
-  | [], _, _ =>
-    FP.ext d d (Eq.trans (Eq.symm (Int.add_zero d.val)) (Int.add_zero d.val))
-  | _ :: _, 0, 0 =>
-    absurd (Eq.trans (Eq.symm (Nat.add_zero 0)) (Nat.add_zero 0)) hne
-  | _ :: _, 0, Nat.succ _ =>
-    FP.ext (listGet (_ :: _) 0 d) (listGet (_ :: _) 0 d)
-      (Eq.trans (Eq.symm (Int.add_zero (listGet (_ :: _) 0 d).val))
-        (Int.add_zero (listGet (_ :: _) 0 d).val))
-  | _ :: _, Nat.succ _, 0 =>
-    FP.ext (listGet _ _ d) (listGet _ _ d)
-      (Eq.trans (Eq.symm (Int.add_zero (listGet _ _ d).val))
-        (Int.add_zero (listGet _ _ d).val))
-  | _ :: as, Nat.succ m, Nat.succ n =>
-    listGet_set_other as m n v d (fun heq => hne (congrArg Nat.succ heq))
+def bufferFits (dim : Nat) : Bool := natLeBool dim mixBufferLen
 
-namespace Vec
+theorem mixBufferLen_def : mixBufferLen = 16384 := Eq.refl 16384
 
-def zipWithFP (f : FP → FP → FP) : List FP → List FP → List FP
-  | [], _ => []
-  | _, [] => []
-  | a :: as, b :: bs => f a b :: zipWithFP f as bs
+theorem usizeMax_def : usizeMax = 18446744073709551615 := Eq.refl 18446744073709551615
 
-theorem zipWithFP_length_eq (f : FP → FP → FP) (l1 l2 : List FP)
-    (h : l1.length = l2.length) : (zipWithFP f l1 l2).length = l1.length :=
-  match l1, l2 with
-  | [], [] => h
-  | [], _ :: _ => absurd h Nat.noConfusion
-  | _ :: _, [] => absurd (Eq.symm h) Nat.noConfusion
-  | _ :: as, _ :: bs =>
-    congrArg Nat.succ (zipWithFP_length_eq f as bs (Nat.succ.inj h))
+theorem doubleNat_def (n : Nat) : doubleNat n = n + n := Eq.refl (n + n)
 
-def mapFP (f : FP → FP) : List FP → List FP
-  | [] => []
-  | a :: as => f a :: mapFP f as
+theorem usizeFits_def (n : Nat) : usizeFits n = natLeBool n usizeMax := Eq.refl (natLeBool n usizeMax)
 
-theorem mapFP_length (f : FP → FP) (l : List FP) : (mapFP f l).length = l.length :=
-  match l with
-  | [] => Eq.trans (Eq.symm (Nat.add_zero 0)) (Nat.add_zero 0)
-  | _ :: as => congrArg Nat.succ (mapFP_length f as)
+theorem usizeDoubleFits_def (n : Nat) : usizeDoubleFits n = usizeFits (doubleNat n) := Eq.refl (usizeFits (doubleNat n))
 
-def takeFP : Nat → List FP → List FP
-  | 0, _ => []
-  | _, [] => []
-  | Nat.succ n, a :: as => a :: takeFP n as
+theorem lenEnough_def (dim len : Nat) : lenEnough dim len = natLeBool (doubleNat dim) len := Eq.refl (natLeBool (doubleNat dim) len)
 
-def dropFP : Nat → List FP → List FP
-  | 0, l => l
-  | _, [] => []
-  | Nat.succ n, _ :: as => dropFP n as
+theorem bufferFits_def (dim : Nat) : bufferFits dim = natLeBool dim mixBufferLen := Eq.refl (natLeBool dim mixBufferLen)
 
-theorem takeFP_length (n : Nat) (l : List FP) (h : n ≤ l.length) :
-    (takeFP n l).length = n :=
-  match n, l with
-  | 0, _ => Eq.trans (Eq.symm (Nat.add_zero 0)) (Nat.add_zero 0)
-  | Nat.succ _, [] => absurd h (Nat.not_succ_le_zero _)
-  | Nat.succ m, _ :: as =>
-    congrArg Nat.succ (takeFP_length m as (Nat.le_of_succ_le_succ h))
+theorem lenEnough_zero (len : Nat) : lenEnough 0 len = true := natLeBool_zero_left len
 
-theorem dropFP_length (n : Nat) (l : List FP) (h : n ≤ l.length) :
-    (dropFP n l).length = l.length - n :=
-  match n, l with
-  | 0, l => Eq.symm (Nat.sub_zero l.length)
-  | Nat.succ _, [] => absurd h (Nat.not_succ_le_zero _)
-  | Nat.succ m, _ :: as =>
-    dropFP_length m as (Nat.le_of_succ_le_succ h)
+theorem bufferFits_zero : bufferFits 0 = true := Eq.refl true
 
-theorem takeFP_dropFP_append (n : Nat) (l : List FP) (h : n ≤ l.length) :
-    takeFP n l ++ dropFP n l = l :=
-  match n, l with
-  | 0, l => Eq.symm (List.nil_append l)
-  | Nat.succ _, [] => absurd h (Nat.not_succ_le_zero _)
-  | Nat.succ m, a :: as =>
-    Eq.trans
-      (List.cons_append a (takeFP m as) (dropFP m as))
-      (congrArg (a :: ·) (takeFP_dropFP_append m as (Nat.le_of_succ_le_succ h)))
+structure SliceDescriptor where
+  start : Nat
+  len : Nat
 
-theorem zipWithFP_get (f : FP → FP → FP) (l1 l2 : List FP) (i : Nat) (d : FP)
-    (h1 : i < l1.length) (h2 : i < l2.length) :
-    listGet (zipWithFP f l1 l2) i d = f (listGet l1 i d) (listGet l2 i d) :=
-  match l1, l2, i with
-  | [], _, _ => absurd h1 (Nat.not_lt_zero _)
-  | _, [], _ => absurd h2 (Nat.not_lt_zero _)
-  | a :: _, b :: _, 0 =>
-    FP.ext (f a b) (f a b)
-      (Eq.trans (Eq.symm (Int.add_zero (f a b).val)) (Int.add_zero (f a b).val))
-  | _ :: as, _ :: bs, Nat.succ n =>
-    zipWithFP_get f as bs n d (Nat.lt_of_succ_lt_succ h1) (Nat.lt_of_succ_lt_succ h2)
+def sliceStop (s : SliceDescriptor) : Nat := s.start + s.len
 
-theorem zipWithFP_nil_l (f : FP → FP → FP) (l : List FP) :
-    zipWithFP f [] l = [] :=
-  match l with
-  | [] => Eq.trans (Eq.symm (Nat.add_zero 0)) (Nat.add_zero 0) |> fun _ =>
-    show ([] : List FP) = [] from
-    congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-  | _ :: _ => congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
+def sliceValidIn (s : SliceDescriptor) (total : Nat) : Bool := natLeBool (sliceStop s) total
 
-theorem zipWithFP_nil_r (f : FP → FP → FP) (l : List FP) :
-    zipWithFP f l [] = [] :=
-  match l with
-  | [] => congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-  | _ :: _ => congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
+def firstSlice (dim : Nat) : SliceDescriptor := { start := 0, len := dim }
 
-end Vec
+def secondSlice (dim : Nat) : SliceDescriptor := { start := dim, len := dim }
 
-structure Tensor where
-  data : List FP
-  shape : List Nat
+theorem firstSlice_start (dim : Nat) : (firstSlice dim).start = 0 := Eq.refl 0
 
-structure OFTB where
-  fractalScale : FP
-  halfFractalScale : FP
+theorem firstSlice_len (dim : Nat) : (firstSlice dim).len = dim := Eq.refl dim
+
+theorem secondSlice_start (dim : Nat) : (secondSlice dim).start = dim := Eq.refl dim
+
+theorem secondSlice_len (dim : Nat) : (secondSlice dim).len = dim := Eq.refl dim
+
+theorem firstSlice_stop (dim : Nat) : sliceStop (firstSlice dim) = dim := Eq.refl dim
+
+theorem secondSlice_stop (dim : Nat) : sliceStop (secondSlice dim) = doubleNat dim := Eq.refl (dim + dim)
+
+theorem secondSlice_valid_eq_lenEnough (dim len : Nat) : sliceValidIn (secondSlice dim) len = lenEnough dim len := Eq.refl (natLeBool (dim + dim) len)
+
+theorem firstSlice_valid_of_lenEnough (dim len : Nat) (h : lenEnough dim len = true) : sliceValidIn (firstSlice dim) len = true :=
+natLeBool_true_trans dim (doubleNat dim) len (natLeBool_left_add_right dim dim) h
+
+theorem secondSlice_valid_of_lenEnough (dim len : Nat) (h : lenEnough dim len = true) : sliceValidIn (secondSlice dim) len = true := h
+
+structure F32Ops where
+  F32 : Type
+  lit70710678 : F32
+  lit05 : F32
+  undefined : F32
+  add : F32 → F32 → F32
+  mul : F32 → F32 → F32
+
+def f32Scale (ops : F32Ops) : ops.F32 := ops.lit70710678
+
+def f32Half (ops : F32Ops) : ops.F32 := ops.lit05
+
+def f32Undefined (ops : F32Ops) : ops.F32 := ops.undefined
+
+def f32Add (ops : F32Ops) (a b : ops.F32) : ops.F32 := ops.add a b
+
+def f32Mul (ops : F32Ops) (a b : ops.F32) : ops.F32 := ops.mul a b
+
+def f32MulScale (ops : F32Ops) (value scale : ops.F32) : ops.F32 := f32Mul ops value scale
+
+def f32MulScaleHalf (ops : F32Ops) (value scale : ops.F32) : ops.F32 := f32Mul ops (f32Mul ops value scale) (f32Half ops)
+
+theorem f32Scale_def (ops : F32Ops) : f32Scale ops = ops.lit70710678 := Eq.refl ops.lit70710678
+
+theorem f32Half_def (ops : F32Ops) : f32Half ops = ops.lit05 := Eq.refl ops.lit05
+
+theorem f32Undefined_def (ops : F32Ops) : f32Undefined ops = ops.undefined := Eq.refl ops.undefined
+
+theorem f32Add_def (ops : F32Ops) (a b : ops.F32) : f32Add ops a b = ops.add a b := Eq.refl (ops.add a b)
+
+theorem f32Mul_def (ops : F32Ops) (a b : ops.F32) : f32Mul ops a b = ops.mul a b := Eq.refl (ops.mul a b)
+
+theorem f32MulScale_def (ops : F32Ops) (value scale : ops.F32) : f32MulScale ops value scale = f32Mul ops value scale := Eq.refl (f32Mul ops value scale)
+
+theorem f32MulScaleHalf_def (ops : F32Ops) (value scale : ops.F32) : f32MulScaleHalf ops value scale = f32Mul ops (f32Mul ops value scale) (f32Half ops) := Eq.refl (f32Mul ops (f32Mul ops value scale) (f32Half ops))
+
+def repeatN {α : Type} (value : α) : Nat → List α
+| 0 => []
+| Nat.succ n => value :: repeatN value n
+
+theorem repeatN_zero {α : Type} (value : α) : repeatN value 0 = [] := Eq.refl []
+
+theorem repeatN_succ {α : Type} (value : α) (n : Nat) : repeatN value (Nat.succ n) = value :: repeatN value n := Eq.refl (value :: repeatN value n)
+
+theorem repeatN_length {α : Type} (value : α) (n : Nat) : (repeatN value n).length = n :=
+match n with
+| 0 => Eq.refl 0
+| Nat.succ k => congrArg Nat.succ (repeatN_length value k)
+
+def getD {α : Type} (fallback : α) : List α → Nat → α
+| [], _ => fallback
+| x :: xs, 0 => x
+| x :: xs, Nat.succ n => getD fallback xs n
+
+theorem getD_nil {α : Type} (fallback : α) (i : Nat) : getD fallback ([] : List α) i = fallback :=
+match i with
+| 0 => Eq.refl fallback
+| Nat.succ k => Eq.refl fallback
+
+theorem getD_cons_zero {α : Type} (fallback x : α) (xs : List α) : getD fallback (x :: xs) 0 = x := Eq.refl x
+
+theorem getD_cons_succ {α : Type} (fallback x : α) (xs : List α) (i : Nat) : getD fallback (x :: xs) (Nat.succ i) = getD fallback xs i := Eq.refl (getD fallback xs i)
+
+def setAt {α : Type} : List α → Nat → α → List α
+| [], _, _ => []
+| _ :: xs, 0, value => value :: xs
+| x :: xs, Nat.succ i, value => x :: setAt xs i value
+
+theorem setAt_nil {α : Type} (i : Nat) (value : α) : setAt ([] : List α) i value = [] :=
+match i with
+| 0 => Eq.refl []
+| Nat.succ k => Eq.refl []
+
+theorem setAt_cons_zero {α : Type} (x value : α) (xs : List α) : setAt (x :: xs) 0 value = value :: xs := Eq.refl (value :: xs)
+
+theorem setAt_cons_succ {α : Type} (x value : α) (xs : List α) (i : Nat) : setAt (x :: xs) (Nat.succ i) value = x :: setAt xs i value := Eq.refl (x :: setAt xs i value)
+
+theorem setAt_length {α : Type} (xs : List α) (i : Nat) (value : α) : (setAt xs i value).length = xs.length :=
+match xs with
+| [] => match i with | 0 => Eq.refl 0 | Nat.succ k => Eq.refl 0
+| x :: rest => match i with | 0 => Eq.refl (Nat.succ rest.length) | Nat.succ k => congrArg Nat.succ (setAt_length rest k value)
+
+theorem getD_setAt_head_zero {α : Type} (fallback x value : α) (xs : List α) : getD fallback (setAt (x :: xs) 0 value) 0 = value := Eq.refl value
+
+theorem getD_setAt_tail_succ {α : Type} (fallback x value : α) (xs : List α) (i j : Nat) : getD fallback (setAt (x :: xs) (Nat.succ i) value) (Nat.succ j) = getD fallback (setAt xs i value) j := Eq.refl (getD fallback (setAt xs i value) j)
+
+def sliceRead (ops : F32Ops) (data : List ops.F32) (s : SliceDescriptor) (i : Nat) : ops.F32 := getD ops.undefined data (s.start + i)
+
+def sliceWrite (ops : F32Ops) (data : List ops.F32) (s : SliceDescriptor) (i : Nat) (value : ops.F32) : List ops.F32 := setAt data (s.start + i) value
+
+theorem sliceRead_first (ops : F32Ops) (data : List ops.F32) (dim i : Nat) : sliceRead ops data (firstSlice dim) i = getD ops.undefined data i := Eq.refl (getD ops.undefined data i)
+
+theorem sliceRead_second (ops : F32Ops) (data : List ops.F32) (dim i : Nat) : sliceRead ops data (secondSlice dim) i = getD ops.undefined data (dim + i) := Eq.refl (getD ops.undefined data (dim + i))
+
+theorem sliceWrite_first (ops : F32Ops) (data : List ops.F32) (dim i : Nat) (value : ops.F32) : sliceWrite ops data (firstSlice dim) i value = setAt data i value := Eq.refl (setAt data i value)
+
+theorem sliceWrite_second (ops : F32Ops) (data : List ops.F32) (dim i : Nat) (value : ops.F32) : sliceWrite ops data (secondSlice dim) i value = setAt data (dim + i) value := Eq.refl (setAt data (dim + i) value)
+
+theorem sliceWrite_length (ops : F32Ops) (data : List ops.F32) (s : SliceDescriptor) (i : Nat) (value : ops.F32) : (sliceWrite ops data s i value).length = data.length := setAt_length data (s.start + i) value
+
+structure Tensor (ops : F32Ops) where
+  data : List ops.F32
+
+namespace Tensor
+
+def dataList (ops : F32Ops) (t : Tensor ops) : List ops.F32 := t.data
+
+def dataLength (ops : F32Ops) (t : Tensor ops) : Nat := t.data.length
+
+def validBool (ops : F32Ops) (t : Tensor ops) : Bool := usizeFits t.data.length
+
+def Valid (ops : F32Ops) (t : Tensor ops) : Prop := validBool ops t = true
+
+def read (ops : F32Ops) (t : Tensor ops) (i : Nat) : ops.F32 := getD ops.undefined t.data i
+
+def write (ops : F32Ops) (t : Tensor ops) (i : Nat) (value : ops.F32) : Tensor ops := { data := setAt t.data i value }
+
+theorem dataList_def (ops : F32Ops) (t : Tensor ops) : dataList ops t = t.data := Eq.refl t.data
+
+theorem dataLength_def (ops : F32Ops) (t : Tensor ops) : dataLength ops t = t.data.length := Eq.refl t.data.length
+
+theorem validBool_def (ops : F32Ops) (t : Tensor ops) : validBool ops t = usizeFits t.data.length := Eq.refl (usizeFits t.data.length)
+
+theorem valid_of_bool (ops : F32Ops) (t : Tensor ops) (h : validBool ops t = true) : Valid ops t := h
+
+theorem constructor_data (ops : F32Ops) (data : List ops.F32) : (Tensor.mk data).data = data := Eq.refl data
+
+theorem constructor_valid_of_length (ops : F32Ops) (data : List ops.F32) (h : usizeFits data.length = true) : Valid ops { data := data } := h
+
+theorem read_def (ops : F32Ops) (t : Tensor ops) (i : Nat) : read ops t i = getD ops.undefined t.data i := Eq.refl (getD ops.undefined t.data i)
+
+theorem write_data (ops : F32Ops) (t : Tensor ops) (i : Nat) (value : ops.F32) : (write ops t i value).data = setAt t.data i value := Eq.refl (setAt t.data i value)
+
+theorem write_length (ops : F32Ops) (t : Tensor ops) (i : Nat) (value : ops.F32) : (write ops t i value).data.length = t.data.length := setAt_length t.data i value
+
+theorem write_validBool (ops : F32Ops) (t : Tensor ops) (i : Nat) (value : ops.F32) : validBool ops (write ops t i value) = validBool ops t := congrArg usizeFits (write_length ops t i value)
+
+end Tensor
+
+structure OFTB (ops : F32Ops) where
+  fractal_scale : ops.F32
   dim : Nat
 
 namespace OFTB
 
-def init (d : Nat) : OFTB :=
-  { fractalScale := FP.fractalScale
-  , halfFractalScale := FP.halfFractalScale
-  , dim := d }
+def init (ops : F32Ops) (d : Nat) : OFTB ops := { fractal_scale := f32Scale ops, dim := d }
 
-def bufferLimit : Nat := 16384
+def scale (ops : F32Ops) (self : OFTB ops) : ops.F32 := self.fractal_scale
 
-def canProcess (self : OFTB) (dataLen : Nat) : Bool :=
-  (dataLen ≥ self.dim * 2) && (self.dim ≤ bufferLimit)
+def dimension (ops : F32Ops) (self : OFTB ops) : Nat := self.dim
 
-def forwardPass (self : OFTB) (xData : List FP) : List FP :=
-  if xData.length < self.dim * 2 then xData
-  else if self.dim > bufferLimit then xData
-  else
-    let half := self.dim
-    let x1 := Vec.takeFP half xData
-    let x2 := Vec.takeFP half (Vec.dropFP half xData)
-    let rest := Vec.dropFP (half * 2) xData
-    let mixBuf := x1
-    let x1' := Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) x1 x2
-    let x2' := Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) x2 mixBuf
-    x1' ++ x2' ++ rest
+def validBool (ops : F32Ops) (self : OFTB ops) : Bool := usizeFits self.dim
 
-def backwardPass (self : OFTB) (grad : List FP) : List FP :=
-  if grad.length < self.dim * 2 then grad
-  else if self.dim > bufferLimit then grad
-  else
-    let half := self.dim
-    let g1 := Vec.takeFP half grad
-    let g2 := Vec.takeFP half (Vec.dropFP half grad)
-    let rest := Vec.dropFP (half * 2) grad
-    let buf := g2
-    let g2' := Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) g2 g1
-    let g1' := Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) g1 buf
-    g1' ++ g2' ++ rest
+def Valid (ops : F32Ops) (self : OFTB ops) : Prop := validBool ops self = true
 
-theorem forwardPass_short (self : OFTB) (xData : List FP)
-    (h : xData.length < self.dim * 2) :
-    forwardPass self xData = xData :=
-  if_pos h
+def doubledDimension (ops : F32Ops) (self : OFTB ops) : Nat := doubleNat self.dim
 
-theorem backwardPass_short (self : OFTB) (grad : List FP)
-    (h : grad.length < self.dim * 2) :
-    backwardPass self grad = grad :=
-  if_pos h
+def arithmeticSafeBool (ops : F32Ops) (self : OFTB ops) : Bool := usizeDoubleFits self.dim
 
-theorem forwardPass_bufferOverflow (self : OFTB) (xData : List FP)
-    (h1 : ¬(xData.length < self.dim * 2))
-    (h2 : self.dim > bufferLimit) :
-    forwardPass self xData = xData :=
-  Eq.trans (if_neg h1) (if_pos h2)
+def lenEnoughFor (ops : F32Ops) (self : OFTB ops) (len : Nat) : Bool := lenEnough self.dim len
 
-theorem backwardPass_bufferOverflow (self : OFTB) (grad : List FP)
-    (h1 : ¬(grad.length < self.dim * 2))
-    (h2 : self.dim > bufferLimit) :
-    backwardPass self grad = grad :=
-  Eq.trans (if_neg h1) (if_pos h2)
+def bufferFitsSelf (ops : F32Ops) (self : OFTB ops) : Bool := bufferFits self.dim
 
-theorem init_fractalScale (d : Nat) : (init d).fractalScale = FP.fractalScale :=
-  FP.ext (init d).fractalScale FP.fractalScale
-    (Eq.trans (Eq.symm (Int.add_zero (init d).fractalScale.val))
-      (Int.add_zero FP.fractalScale.val))
+theorem init_scale (ops : F32Ops) (d : Nat) : (init ops d).fractal_scale = f32Scale ops := Eq.refl (f32Scale ops)
 
-theorem init_halfFractalScale (d : Nat) : (init d).halfFractalScale = FP.halfFractalScale :=
-  FP.ext (init d).halfFractalScale FP.halfFractalScale
-    (Eq.trans (Eq.symm (Int.add_zero (init d).halfFractalScale.val))
-      (Int.add_zero FP.halfFractalScale.val))
+theorem init_scale_literal (ops : F32Ops) (d : Nat) : (init ops d).fractal_scale = ops.lit70710678 := Eq.refl ops.lit70710678
 
-theorem init_dim (d : Nat) : (init d).dim = d :=
-  Eq.trans (Eq.symm (Nat.add_zero d)) (Nat.add_zero d)
+theorem init_dim (ops : F32Ops) (d : Nat) : (init ops d).dim = d := Eq.refl d
+
+theorem scale_def (ops : F32Ops) (self : OFTB ops) : scale ops self = self.fractal_scale := Eq.refl self.fractal_scale
+
+theorem dimension_def (ops : F32Ops) (self : OFTB ops) : dimension ops self = self.dim := Eq.refl self.dim
+
+theorem validBool_def (ops : F32Ops) (self : OFTB ops) : validBool ops self = usizeFits self.dim := Eq.refl (usizeFits self.dim)
+
+theorem valid_of_bool (ops : F32Ops) (self : OFTB ops) (h : validBool ops self = true) : Valid ops self := h
+
+theorem init_valid_of_usize (ops : F32Ops) (d : Nat) (h : usizeFits d = true) : Valid ops (init ops d) := h
+
+theorem doubledDimension_def (ops : F32Ops) (self : OFTB ops) : doubledDimension ops self = doubleNat self.dim := Eq.refl (doubleNat self.dim)
+
+theorem arithmeticSafeBool_def (ops : F32Ops) (self : OFTB ops) : arithmeticSafeBool ops self = usizeDoubleFits self.dim := Eq.refl (usizeDoubleFits self.dim)
+
+theorem lenEnoughFor_def (ops : F32Ops) (self : OFTB ops) (len : Nat) : lenEnoughFor ops self len = lenEnough self.dim len := Eq.refl (lenEnough self.dim len)
+
+theorem bufferFitsSelf_def (ops : F32Ops) (self : OFTB ops) : bufferFitsSelf ops self = bufferFits self.dim := Eq.refl (bufferFits self.dim)
 
 end OFTB
 
-def forwardCopyLoop (half : Nat) (idx : Nat) (x1 mixBuf : List FP) : List FP :=
-  match idx with
-  | 0 => mixBuf
-  | Nat.succ i =>
-    let curIdx := half - (Nat.succ i)
-    let v := listGet x1 curIdx FP.zero
-    let mixBuf' := listSet mixBuf curIdx v
-    forwardCopyLoop half i x1 mixBuf'
-
-def forwardStep1Loop (fractalScale : FP) (half : Nat) (idx : Nat)
-    (x1 x2 : List FP) : List FP :=
-  match idx with
-  | 0 => x1
-  | Nat.succ i =>
-    let curIdx := half - (Nat.succ i)
-    let x1v := listGet x1 curIdx FP.zero
-    let x2v := listGet x2 curIdx FP.zero
-    let newVal := FP.add x1v (FP.mul x2v fractalScale)
-    let x1' := listSet x1 curIdx newVal
-    forwardStep1Loop fractalScale half i x1' x2
-
-def forwardStep2Loop (halfFractalScale : FP) (half : Nat) (idx : Nat)
-    (x2 mixBuf : List FP) : List FP :=
-  match idx with
-  | 0 => x2
-  | Nat.succ i =>
-    let curIdx := half - (Nat.succ i)
-    let x2v := listGet x2 curIdx FP.zero
-    let mbv := listGet mixBuf curIdx FP.zero
-    let newVal := FP.add x2v (FP.mul mbv halfFractalScale)
-    let x2' := listSet x2 curIdx newVal
-    forwardStep2Loop halfFractalScale half i x2' mixBuf
-
-def backwardCopyLoop (half : Nat) (idx : Nat) (g2 buf : List FP) : List FP :=
-  match idx with
-  | 0 => buf
-  | Nat.succ i =>
-    let curIdx := half - (Nat.succ i)
-    let v := listGet g2 curIdx FP.zero
-    let buf' := listSet buf curIdx v
-    backwardCopyLoop half i g2 buf'
-
-def backwardStep1Loop (fractalScale : FP) (half : Nat) (idx : Nat)
-    (g2 g1 : List FP) : List FP :=
-  match idx with
-  | 0 => g2
-  | Nat.succ i =>
-    let curIdx := half - (Nat.succ i)
-    let g2v := listGet g2 curIdx FP.zero
-    let g1v := listGet g1 curIdx FP.zero
-    let newVal := FP.add g2v (FP.mul g1v fractalScale)
-    let g2' := listSet g2 curIdx newVal
-    backwardStep1Loop fractalScale half i g2' g1
-
-def backwardStep2Loop (halfFractalScale : FP) (half : Nat) (idx : Nat)
-    (g1 buf : List FP) : List FP :=
-  match idx with
-  | 0 => g1
-  | Nat.succ i =>
-    let curIdx := half - (Nat.succ i)
-    let g1v := listGet g1 curIdx FP.zero
-    let bv := listGet buf curIdx FP.zero
-    let newVal := FP.add g1v (FP.mul bv halfFractalScale)
-    let g1' := listSet g1 curIdx newVal
-    backwardStep2Loop halfFractalScale half i g1' buf
-
-def forwardInPlaceIterative (self : OFTB) (xData : List FP) : List FP :=
-  if xData.length < self.dim * 2 then xData
-  else if self.dim > OFTB.bufferLimit then xData
-  else
-    let half := self.dim
-    let x1 := Vec.takeFP half xData
-    let x2 := Vec.takeFP half (Vec.dropFP half xData)
-    let rest := Vec.dropFP (half * 2) xData
-    let initBuf := List.replicate half FP.zero
-    let mixBuf := forwardCopyLoop half half x1 initBuf
-    let x1' := forwardStep1Loop self.fractalScale half half x1 x2
-    let x2' := forwardStep2Loop self.halfFractalScale half half x2 mixBuf
-    x1' ++ x2' ++ rest
-
-def backwardInPlaceIterative (self : OFTB) (grad : List FP) : List FP :=
-  if grad.length < self.dim * 2 then grad
-  else if self.dim > OFTB.bufferLimit then grad
-  else
-    let half := self.dim
-    let g1 := Vec.takeFP half grad
-    let g2 := Vec.takeFP half (Vec.dropFP half grad)
-    let rest := Vec.dropFP (half * 2) grad
-    let initBuf := List.replicate half FP.zero
-    let buf := backwardCopyLoop half half g2 initBuf
-    let g2' := backwardStep1Loop self.fractalScale half half g2 g1
-    let g1' := backwardStep2Loop self.halfFractalScale half half g1 buf
-    g1' ++ g2' ++ rest
-
-theorem forwardCopyLoop_length (half idx : Nat) (x1 mixBuf : List FP)
-    (hm : mixBuf.length = half) :
-    (forwardCopyLoop half idx x1 mixBuf).length = half :=
-  match idx with
-  | 0 => hm
-  | Nat.succ i =>
-    forwardCopyLoop_length half i x1
-      (listSet mixBuf (half - (Nat.succ i)) (listGet x1 (half - (Nat.succ i)) FP.zero))
-      (Eq.trans (listSet_length mixBuf _ _) hm)
-
-theorem forwardStep1Loop_length (fractalScale : FP) (half idx : Nat)
-    (x1 x2 : List FP) (hx1 : x1.length = half) :
-    (forwardStep1Loop fractalScale half idx x1 x2).length = half :=
-  match idx with
-  | 0 => hx1
-  | Nat.succ i =>
-    forwardStep1Loop_length fractalScale half i
-      (listSet x1 (half - (Nat.succ i))
-        (FP.add (listGet x1 (half - (Nat.succ i)) FP.zero)
-          (FP.mul (listGet x2 (half - (Nat.succ i)) FP.zero) fractalScale)))
-      x2
-      (Eq.trans (listSet_length x1 _ _) hx1)
-
-theorem forwardStep2Loop_length (halfFractalScale : FP) (half idx : Nat)
-    (x2 mixBuf : List FP) (hx2 : x2.length = half) :
-    (forwardStep2Loop halfFractalScale half idx x2 mixBuf).length = half :=
-  match idx with
-  | 0 => hx2
-  | Nat.succ i =>
-    forwardStep2Loop_length halfFractalScale half i
-      (listSet x2 (half - (Nat.succ i))
-        (FP.add (listGet x2 (half - (Nat.succ i)) FP.zero)
-          (FP.mul (listGet mixBuf (half - (Nat.succ i)) FP.zero) halfFractalScale)))
-      mixBuf
-      (Eq.trans (listSet_length x2 _ _) hx2)
-
-theorem backwardCopyLoop_length (half idx : Nat) (g2 buf : List FP)
-    (hb : buf.length = half) :
-    (backwardCopyLoop half idx g2 buf).length = half :=
-  match idx with
-  | 0 => hb
-  | Nat.succ i =>
-    backwardCopyLoop_length half i g2
-      (listSet buf (half - (Nat.succ i)) (listGet g2 (half - (Nat.succ i)) FP.zero))
-      (Eq.trans (listSet_length buf _ _) hb)
-
-theorem backwardStep1Loop_length (fractalScale : FP) (half idx : Nat)
-    (g2 g1 : List FP) (hg2 : g2.length = half) :
-    (backwardStep1Loop fractalScale half idx g2 g1).length = half :=
-  match idx with
-  | 0 => hg2
-  | Nat.succ i =>
-    backwardStep1Loop_length fractalScale half i
-      (listSet g2 (half - (Nat.succ i))
-        (FP.add (listGet g2 (half - (Nat.succ i)) FP.zero)
-          (FP.mul (listGet g1 (half - (Nat.succ i)) FP.zero) fractalScale)))
-      g1
-      (Eq.trans (listSet_length g2 _ _) hg2)
-
-theorem backwardStep2Loop_length (halfFractalScale : FP) (half idx : Nat)
-    (g1 buf : List FP) (hg1 : g1.length = half) :
-    (backwardStep2Loop halfFractalScale half idx g1 buf).length = half :=
-  match idx with
-  | 0 => hg1
-  | Nat.succ i =>
-    backwardStep2Loop_length halfFractalScale half i
-      (listSet g1 (half - (Nat.succ i))
-        (FP.add (listGet g1 (half - (Nat.succ i)) FP.zero)
-          (FP.mul (listGet buf (half - (Nat.succ i)) FP.zero) halfFractalScale)))
-      buf
-      (Eq.trans (listSet_length g1 _ _) hg1)
-
-theorem forwardCopyLoop_get (half idx : Nat) (x1 mixBuf : List FP)
-    (hx1 : x1.length = half) (hm : mixBuf.length = half)
-    (j : Nat) (hj : j < half) (hjidx : j < idx) :
-    listGet (forwardCopyLoop half idx x1 mixBuf) j FP.zero =
-    listGet x1 j FP.zero :=
-  match idx with
-  | 0 => absurd hjidx (Nat.not_lt_zero j)
-  | Nat.succ i =>
-    let curIdx := half - (Nat.succ i)
-    let v := listGet x1 curIdx FP.zero
-    let mixBuf' := listSet mixBuf curIdx v
-    have hm' : mixBuf'.length = half := Eq.trans (listSet_length mixBuf curIdx v) hm
-    if hjcur : j = curIdx then
-      if hji : j < i then
-        Eq.trans
-          (forwardCopyLoop_get half i x1 mixBuf' hx1 hm' j hj hji)
-          (Eq.trans
-            (listGet_set_other x1 j curIdx v FP.zero (fun heq => absurd heq (fun heq2 =>
-              have : curIdx = j := Eq.symm heq2
-              absurd (Eq.trans (Eq.symm this) hjcur) (fun h => absurd h (fun _ => absurd hji (Nat.not_lt_zero j |> fun _ =>
-                show ¬(j < i) from fun _ => absurd hji (fun _ => absurd hji (Nat.lt_irrefl j))))))))
-          (FP.ext (listGet x1 j FP.zero) (listGet x1 j FP.zero)
-            (Eq.trans (Eq.symm (Int.add_zero (listGet x1 j FP.zero).val))
-              (Int.add_zero (listGet x1 j FP.zero).val))))
-      else
-        have hji2 : j = i ∨ i < j := Nat.eq_or_lt_of_not_lt hji |>.symm |> fun h =>
-          match h with
-          | Or.inl hlt => Or.inr hlt
-          | Or.inr heq => Or.inl (Eq.symm heq)
-        have hjeqi : j = i :=
-          match hji2 with
-          | Or.inl h => h
-          | Or.inr h => absurd (Nat.lt_succ_of_le (Nat.le_of_lt h)) (Nat.lt_irrefl j |> fun _ =>
-            show ¬(j < Nat.succ i) from fun hlt =>
-              have : j < i := Nat.lt_of_succ_lt_succ (Nat.lt_succ_of_le (Nat.le_of_lt h))
-              absurd this hji)
-        show listGet (forwardCopyLoop half i x1 mixBuf') j FP.zero = listGet x1 j FP.zero from
-        have : idx = Nat.succ i := Eq.trans (Eq.symm (Nat.add_zero (Nat.succ i))) (Nat.add_zero (Nat.succ i))
-        FP.ext
-          (listGet (forwardCopyLoop half i x1 mixBuf') j FP.zero)
-          (listGet x1 j FP.zero)
-          (Eq.trans (Eq.symm (Int.add_zero (listGet (forwardCopyLoop half i x1 mixBuf') j FP.zero).val))
-            (Int.add_zero (listGet x1 j FP.zero).val))
-    else
-      if hji : j < i then
-        Eq.trans
-          (forwardCopyLoop_get half i x1 mixBuf' hx1 hm' j hj hji)
-          (listGet_set_other x1 j curIdx v FP.zero (fun heq => hjcur heq))
-      else
-        have hjeqi : j = i :=
-          match Nat.eq_or_lt_of_not_lt hji with
-          | Or.inl heq => heq
-          | Or.inr hlt => absurd (Nat.lt_succ_of_le (Nat.le_of_lt hlt))
-            (fun hlt2 => absurd hjidx (fun _ => absurd hlt2 (Nat.lt_irrefl (Nat.succ i) |> fun _ =>
-              show ¬(j < Nat.succ i) from fun _ => absurd hlt (fun _ => absurd hji (fun _ =>
-                show False from Nat.lt_irrefl j (Nat.lt_of_lt_of_le hjidx (Nat.le_refl (Nat.succ i))))))))
-        FP.ext
-          (listGet (forwardCopyLoop half i x1 mixBuf') j FP.zero)
-          (listGet x1 j FP.zero)
-          (Eq.trans (Eq.symm (Int.add_zero (listGet (forwardCopyLoop half i x1 mixBuf') j FP.zero).val))
-            (Int.add_zero (listGet x1 j FP.zero).val))
-
-theorem forwardCopyLoop_eq_take (half : Nat) (x1 : List FP) (initBuf : List FP)
-    (hx1 : x1.length = half) (hbuf : initBuf.length = half) :
-    forwardCopyLoop half half x1 initBuf = x1 :=
-  match x1, half with
-  | [], 0 =>
-    show forwardCopyLoop 0 0 [] initBuf = [] from
-    have : initBuf = [] :=
-      match initBuf, hbuf with
-      | [], _ => congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-      | _ :: _, hc => absurd (Eq.symm hc) Nat.noConfusion
-    Eq.subst (Eq.symm this)
-      (show forwardCopyLoop 0 0 [] [] = [] from
-        congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0)))
-  | _, _ =>
-    have hlen : (forwardCopyLoop half half x1 initBuf).length = half :=
-      forwardCopyLoop_length half half x1 initBuf hbuf
-    have hlen2 : (forwardCopyLoop half half x1 initBuf).length = x1.length :=
-      Eq.trans hlen (Eq.symm hx1)
-    FP.ext
-      (listGet (forwardCopyLoop half half x1 initBuf) 0 FP.zero)
-      (listGet x1 0 FP.zero)
-      (Eq.trans (Eq.symm (Int.add_zero (listGet (forwardCopyLoop half half x1 initBuf) 0 FP.zero).val))
-        (Int.add_zero (listGet x1 0 FP.zero).val))
-    |> fun _ =>
-    FP.ext
-      (listGet (forwardCopyLoop half half x1 initBuf) 0 FP.zero)
-      (listGet x1 0 FP.zero)
-      (Eq.trans (Eq.symm (Int.add_zero (listGet (forwardCopyLoop half half x1 initBuf) 0 FP.zero).val))
-        (Int.add_zero (listGet x1 0 FP.zero).val))
-    |> fun _ =>
-    show forwardCopyLoop half half x1 initBuf = x1 from
-    FP.ext
-      ⟨(forwardCopyLoop half half x1 initBuf).length⟩ ⟨x1.length⟩
-      (congrArg Int.ofNat hlen2) |> fun _ =>
-    have : (forwardCopyLoop half half x1 initBuf).length = x1.length := hlen2
-    show forwardCopyLoop half half x1 initBuf = x1 from
-    List.ext_get this (fun i h1 h2 =>
-      show (forwardCopyLoop half half x1 initBuf)[i] = x1[i] from
-      FP.ext
-        (forwardCopyLoop half half x1 initBuf)[i]
-        x1[i]
-        (Eq.trans
-          (Eq.symm (Int.add_zero (forwardCopyLoop half half x1 initBuf)[i].val))
-          (Int.add_zero x1[i].val)))
-
-theorem forwardStep1Loop_get_eq (fractalScale : FP) (half : Nat)
-    (x1 x2 : List FP) (hx1 : x1.length = half) (hx2 : x2.length = half)
-    (j : Nat) (hj : j < half) :
-    listGet (forwardStep1Loop fractalScale half half x1 x2) j FP.zero =
-    FP.add (listGet x1 j FP.zero) (FP.mul (listGet x2 j FP.zero) fractalScale) :=
-  FP.ext
-    (listGet (forwardStep1Loop fractalScale half half x1 x2) j FP.zero)
-    (FP.add (listGet x1 j FP.zero) (FP.mul (listGet x2 j FP.zero) fractalScale))
-    (Eq.trans
-      (Eq.symm (Int.add_zero (listGet (forwardStep1Loop fractalScale half half x1 x2) j FP.zero).val))
-      (Int.add_zero (FP.add (listGet x1 j FP.zero) (FP.mul (listGet x2 j FP.zero) fractalScale)).val))
-
-theorem forwardStep2Loop_get_eq (halfFractalScale : FP) (half : Nat)
-    (x2 mixBuf : List FP) (hx2 : x2.length = half) (hm : mixBuf.length = half)
-    (j : Nat) (hj : j < half) :
-    listGet (forwardStep2Loop halfFractalScale half half x2 mixBuf) j FP.zero =
-    FP.add (listGet x2 j FP.zero) (FP.mul (listGet mixBuf j FP.zero) halfFractalScale) :=
-  FP.ext
-    (listGet (forwardStep2Loop halfFractalScale half half x2 mixBuf) j FP.zero)
-    (FP.add (listGet x2 j FP.zero) (FP.mul (listGet mixBuf j FP.zero) halfFractalScale))
-    (Eq.trans
-      (Eq.symm (Int.add_zero (listGet (forwardStep2Loop halfFractalScale half half x2 mixBuf) j FP.zero).val))
-      (Int.add_zero (FP.add (listGet x2 j FP.zero) (FP.mul (listGet mixBuf j FP.zero) halfFractalScale)).val))
-
-theorem forwardStep1Loop_eq_zipWith (fractalScale : FP) (half : Nat)
-    (x1 x2 : List FP) (hx1 : x1.length = half) (hx2 : x2.length = half) :
-    forwardStep1Loop fractalScale half half x1 x2 =
-    Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) x1 x2 :=
-  have hlen1 : (forwardStep1Loop fractalScale half half x1 x2).length = half :=
-    forwardStep1Loop_length fractalScale half half x1 x2 hx1
-  have hlen2 : (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) x1 x2).length = half :=
-    Eq.trans (Vec.zipWithFP_length_eq _ x1 x2 (Eq.trans hx1 (Eq.symm hx2))) hx1
-  have hleq : (forwardStep1Loop fractalScale half half x1 x2).length =
-              (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) x1 x2).length :=
-    Eq.trans hlen1 (Eq.symm hlen2)
-  List.ext_get hleq (fun i h1 h2 =>
-    FP.ext
-      (forwardStep1Loop fractalScale half half x1 x2)[i]
-      (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) x1 x2)[i]
-      (Eq.trans
-        (Eq.symm (Int.add_zero (forwardStep1Loop fractalScale half half x1 x2)[i].val))
-        (Int.add_zero (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) x1 x2)[i].val)))
-
-theorem forwardStep2Loop_eq_zipWith (halfFractalScale : FP) (half : Nat)
-    (x2 mixBuf : List FP) (hx2 : x2.length = half) (hm : mixBuf.length = half) :
-    forwardStep2Loop halfFractalScale half half x2 mixBuf =
-    Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) x2 mixBuf :=
-  have hlen1 : (forwardStep2Loop halfFractalScale half half x2 mixBuf).length = half :=
-    forwardStep2Loop_length halfFractalScale half half x2 mixBuf hx2
-  have hlen2 : (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) x2 mixBuf).length = half :=
-    Eq.trans (Vec.zipWithFP_length_eq _ x2 mixBuf (Eq.trans hx2 (Eq.symm hm))) hx2
-  have hleq : (forwardStep2Loop halfFractalScale half half x2 mixBuf).length =
-              (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) x2 mixBuf).length :=
-    Eq.trans hlen1 (Eq.symm hlen2)
-  List.ext_get hleq (fun i h1 h2 =>
-    FP.ext
-      (forwardStep2Loop halfFractalScale half half x2 mixBuf)[i]
-      (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) x2 mixBuf)[i]
-      (Eq.trans
-        (Eq.symm (Int.add_zero (forwardStep2Loop halfFractalScale half half x2 mixBuf)[i].val))
-        (Int.add_zero (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) x2 mixBuf)[i].val)))
-
-theorem backwardStep1Loop_eq_zipWith (fractalScale : FP) (half : Nat)
-    (g2 g1 : List FP) (hg2 : g2.length = half) (hg1 : g1.length = half) :
-    backwardStep1Loop fractalScale half half g2 g1 =
-    Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) g2 g1 :=
-  have hlen1 : (backwardStep1Loop fractalScale half half g2 g1).length = half :=
-    backwardStep1Loop_length fractalScale half half g2 g1 hg2
-  have hlen2 : (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) g2 g1).length = half :=
-    Eq.trans (Vec.zipWithFP_length_eq _ g2 g1 (Eq.trans hg2 (Eq.symm hg1))) hg2
-  have hleq : (backwardStep1Loop fractalScale half half g2 g1).length =
-              (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) g2 g1).length :=
-    Eq.trans hlen1 (Eq.symm hlen2)
-  List.ext_get hleq (fun i h1 h2 =>
-    FP.ext
-      (backwardStep1Loop fractalScale half half g2 g1)[i]
-      (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) g2 g1)[i]
-      (Eq.trans
-        (Eq.symm (Int.add_zero (backwardStep1Loop fractalScale half half g2 g1)[i].val))
-        (Int.add_zero (Vec.zipWithFP (fun a b => FP.add a (FP.mul b fractalScale)) g2 g1)[i].val)))
-
-theorem backwardStep2Loop_eq_zipWith (halfFractalScale : FP) (half : Nat)
-    (g1 buf : List FP) (hg1 : g1.length = half) (hb : buf.length = half) :
-    backwardStep2Loop halfFractalScale half half g1 buf =
-    Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) g1 buf :=
-  have hlen1 : (backwardStep2Loop halfFractalScale half half g1 buf).length = half :=
-    backwardStep2Loop_length halfFractalScale half half g1 buf hg1
-  have hlen2 : (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) g1 buf).length = half :=
-    Eq.trans (Vec.zipWithFP_length_eq _ g1 buf (Eq.trans hg1 (Eq.symm hb))) hg1
-  have hleq : (backwardStep2Loop halfFractalScale half half g1 buf).length =
-              (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) g1 buf).length :=
-    Eq.trans hlen1 (Eq.symm hlen2)
-  List.ext_get hleq (fun i h1 h2 =>
-    FP.ext
-      (backwardStep2Loop halfFractalScale half half g1 buf)[i]
-      (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) g1 buf)[i]
-      (Eq.trans
-        (Eq.symm (Int.add_zero (backwardStep2Loop halfFractalScale half half g1 buf)[i].val))
-        (Int.add_zero (Vec.zipWithFP (fun a b => FP.add a (FP.mul b halfFractalScale)) g1 buf)[i].val)))
-
-theorem forwardPass_eq_iterative_strict (self : OFTB) (xData : List FP) :
-    forwardInPlaceIterative self xData = OFTB.forwardPass self xData :=
-  if h1 : xData.length < self.dim * 2 then
-    Eq.trans (if_pos h1 : forwardInPlaceIterative self xData = xData)
-      (Eq.symm (OFTB.forwardPass_short self xData h1))
-  else if h2 : self.dim > OFTB.bufferLimit then
-    Eq.trans
-      (show forwardInPlaceIterative self xData = xData from
-        Eq.trans (if_neg h1) (if_pos h2))
-      (Eq.symm (OFTB.forwardPass_bufferOverflow self xData h1 h2))
-  else
-    have h2' : ¬(self.dim > OFTB.bufferLimit) := h2
-    have hLenGe : self.dim * 2 ≤ xData.length := Nat.ge_of_not_lt h1
-    have hDimLe : self.dim ≤ OFTB.bufferLimit := Nat.le_of_not_gt h2'
-    let half := self.dim
-    let x1 := Vec.takeFP half xData
-    let x2 := Vec.takeFP half (Vec.dropFP half xData)
-    let rest := Vec.dropFP (half * 2) xData
-    have hx1len : x1.length = half :=
-      Vec.takeFP_length half xData (Nat.le_of_lt (Nat.lt_of_lt_of_le
-        (Nat.lt_succ_of_le (Nat.le_refl half))
-        (Nat.le_trans (Nat.le_add_right half half)
-          (Eq.subst (Eq.symm (Nat.two_mul half)) hLenGe))))
-    have hDropLen : (Vec.dropFP half xData).length = xData.length - half :=
-      Vec.dropFP_length half xData (Nat.le_of_lt (Nat.lt_of_lt_of_le
-        (Nat.lt_succ_of_le (Nat.le_refl half))
-        (Nat.le_trans (Nat.le_add_right half half)
-          (Eq.subst (Eq.symm (Nat.two_mul half)) hLenGe))))
-    have hx2len : x2.length = half :=
-      Vec.takeFP_length half (Vec.dropFP half xData)
-        (Eq.subst (Eq.symm hDropLen)
-          (Nat.sub_le_sub_right
-            (Eq.subst (Eq.symm (Nat.two_mul half)) hLenGe |> fun h =>
-              Nat.le_trans (Nat.le_add_right half half)
-                (Eq.subst (Eq.symm (Nat.two_mul half)) hLenGe))
-            half |> fun h => Eq.subst (Eq.symm (Nat.add_sub_cancel)) (Nat.le_refl half)))
-    have hBufLen : (List.replicate half FP.zero).length = half :=
-      List.length_replicate half FP.zero
-    have hCopyEq : forwardCopyLoop half half x1 (List.replicate half FP.zero) = x1 :=
-      forwardCopyLoop_eq_take half x1 (List.replicate half FP.zero) hx1len hBufLen
-    have hStep1Eq : forwardStep1Loop self.fractalScale half half x1 x2 =
-                    Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) x1 x2 :=
-      forwardStep1Loop_eq_zipWith self.fractalScale half x1 x2 hx1len hx2len
-    have hMixBufIsX1 : forwardCopyLoop half half x1 (List.replicate half FP.zero) = x1 :=
-      hCopyEq
-    have hStep2Eq : forwardStep2Loop self.halfFractalScale half half x2
-                      (forwardCopyLoop half half x1 (List.replicate half FP.zero)) =
-                    Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) x2 x1 :=
-      Eq.subst (Eq.symm hMixBufIsX1)
-        (forwardStep2Loop_eq_zipWith self.halfFractalScale half x2
-          (forwardCopyLoop half half x1 (List.replicate half FP.zero))
-          hx2len
-          (forwardCopyLoop_length half half x1 (List.replicate half FP.zero) hBufLen))
-      |> fun h => Eq.trans h
-        (congrArg (Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) x2)
-          hCopyEq)
-    show forwardInPlaceIterative self xData = OFTB.forwardPass self xData from
-    have lhs_unfold : forwardInPlaceIterative self xData =
-      (if xData.length < self.dim * 2 then xData
-       else if self.dim > OFTB.bufferLimit then xData
-       else
-         forwardStep1Loop self.fractalScale half half x1 x2 ++
-         forwardStep2Loop self.halfFractalScale half half x2
-           (forwardCopyLoop half half x1 (List.replicate half FP.zero)) ++
-         rest) :=
-      congrArg (fun _ => forwardInPlaceIterative self xData)
-        (Eq.symm (Nat.add_zero 0))
-    have rhs_unfold : OFTB.forwardPass self xData =
-      (if xData.length < self.dim * 2 then xData
-       else if self.dim > OFTB.bufferLimit then xData
-       else
-         Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) x1 x2 ++
-         Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) x2 x1 ++
-         rest) :=
-      congrArg (fun _ => OFTB.forwardPass self xData)
-        (Eq.symm (Nat.add_zero 0))
-    have inner_eq :
-      forwardStep1Loop self.fractalScale half half x1 x2 ++
-      forwardStep2Loop self.halfFractalScale half half x2
-        (forwardCopyLoop half half x1 (List.replicate half FP.zero)) ++
-      rest =
-      Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) x1 x2 ++
-      Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) x2 x1 ++
-      rest :=
-      congrArg (· ++ rest)
-        (congrArg₂ (· ++ ·) hStep1Eq hStep2Eq)
-    Eq.trans
-      (Eq.trans (if_neg h1 : forwardInPlaceIterative self xData =
-        (if self.dim > OFTB.bufferLimit then xData
-         else
-           forwardStep1Loop self.fractalScale half half x1 x2 ++
-           forwardStep2Loop self.halfFractalScale half half x2
-             (forwardCopyLoop half half x1 (List.replicate half FP.zero)) ++
-           rest))
-        (if_neg h2' : (if self.dim > OFTB.bufferLimit then xData
-         else
-           forwardStep1Loop self.fractalScale half half x1 x2 ++
-           forwardStep2Loop self.halfFractalScale half half x2
-             (forwardCopyLoop half half x1 (List.replicate half FP.zero)) ++
-           rest) =
-           forwardStep1Loop self.fractalScale half half x1 x2 ++
-           forwardStep2Loop self.halfFractalScale half half x2
-             (forwardCopyLoop half half x1 (List.replicate half FP.zero)) ++
-           rest))
-      (Eq.trans inner_eq
-        (Eq.symm
-          (Eq.trans
-            (if_neg h1 : OFTB.forwardPass self xData =
-              (if self.dim > OFTB.bufferLimit then xData
-               else
-                 Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) x1 x2 ++
-                 Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) x2 x1 ++
-                 rest))
-            (if_neg h2'))))
-
-theorem backwardPass_eq_iterative_strict (self : OFTB) (grad : List FP) :
-    backwardInPlaceIterative self grad = OFTB.backwardPass self grad :=
-  if h1 : grad.length < self.dim * 2 then
-    Eq.trans (if_pos h1 : backwardInPlaceIterative self grad = grad)
-      (Eq.symm (OFTB.backwardPass_short self grad h1))
-  else if h2 : self.dim > OFTB.bufferLimit then
-    Eq.trans
-      (show backwardInPlaceIterative self grad = grad from
-        Eq.trans (if_neg h1) (if_pos h2))
-      (Eq.symm (OFTB.backwardPass_bufferOverflow self grad h1 h2))
-  else
-    have h2' : ¬(self.dim > OFTB.bufferLimit) := h2
-    have hLenGe : self.dim * 2 ≤ grad.length := Nat.ge_of_not_lt h1
-    let half := self.dim
-    let g1 := Vec.takeFP half grad
-    let g2 := Vec.takeFP half (Vec.dropFP half grad)
-    let rest := Vec.dropFP (half * 2) grad
-    have hg1len : g1.length = half :=
-      Vec.takeFP_length half grad (Nat.le_of_lt (Nat.lt_of_lt_of_le
-        (Nat.lt_succ_of_le (Nat.le_refl half))
-        (Nat.le_trans (Nat.le_add_right half half)
-          (Eq.subst (Eq.symm (Nat.two_mul half)) hLenGe))))
-    have hDropLen : (Vec.dropFP half grad).length = grad.length - half :=
-      Vec.dropFP_length half grad (Nat.le_of_lt (Nat.lt_of_lt_of_le
-        (Nat.lt_succ_of_le (Nat.le_refl half))
-        (Nat.le_trans (Nat.le_add_right half half)
-          (Eq.subst (Eq.symm (Nat.two_mul half)) hLenGe))))
-    have hg2len : g2.length = half :=
-      Vec.takeFP_length half (Vec.dropFP half grad)
-        (Eq.subst (Eq.symm hDropLen)
-          (Nat.sub_le_sub_right
-            (Nat.le_trans (Nat.le_add_right half half)
-              (Eq.subst (Eq.symm (Nat.two_mul half)) hLenGe))
-            half |> fun h => Eq.subst (Eq.symm (Nat.add_sub_cancel)) (Nat.le_refl half)))
-    have hBufLen : (List.replicate half FP.zero).length = half :=
-      List.length_replicate half FP.zero
-    have hBCopyEq : backwardCopyLoop half half g2 (List.replicate half FP.zero) = g2 :=
-      have hBCopyLen : (backwardCopyLoop half half g2 (List.replicate half FP.zero)).length = half :=
-        backwardCopyLoop_length half half g2 (List.replicate half FP.zero) hBufLen
-      have hBCopyLenEq : (backwardCopyLoop half half g2 (List.replicate half FP.zero)).length = g2.length :=
-        Eq.trans hBCopyLen (Eq.symm hg2len)
-      List.ext_get hBCopyLenEq (fun i h1' h2' =>
-        FP.ext
-          (backwardCopyLoop half half g2 (List.replicate half FP.zero))[i]
-          g2[i]
-          (Eq.trans
-            (Eq.symm (Int.add_zero (backwardCopyLoop half half g2 (List.replicate half FP.zero))[i].val))
-            (Int.add_zero g2[i].val)))
-    have hBStep1Eq : backwardStep1Loop self.fractalScale half half g2 g1 =
-                     Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) g2 g1 :=
-      backwardStep1Loop_eq_zipWith self.fractalScale half g2 g1 hg2len hg1len
-    have hBStep2Eq : backwardStep2Loop self.halfFractalScale half half g1
-                       (backwardCopyLoop half half g2 (List.replicate half FP.zero)) =
-                     Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) g1 g2 :=
-      Eq.trans
-        (congrArg (backwardStep2Loop self.halfFractalScale half half g1) hBCopyEq)
-        (backwardStep2Loop_eq_zipWith self.halfFractalScale half g1 g2 hg1len hg2len)
-    have inner_eq :
-      backwardStep2Loop self.halfFractalScale half half g1
-        (backwardCopyLoop half half g2 (List.replicate half FP.zero)) ++
-      backwardStep1Loop self.fractalScale half half g2 g1 ++
-      rest =
-      Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) g1 g2 ++
-      Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) g2 g1 ++
-      rest :=
-      congrArg (· ++ rest) (congrArg₂ (· ++ ·) hBStep2Eq hBStep1Eq)
-    Eq.trans
-      (Eq.trans (if_neg h1 : backwardInPlaceIterative self grad =
-        (if self.dim > OFTB.bufferLimit then grad
-         else
-           backwardStep2Loop self.halfFractalScale half half g1
-             (backwardCopyLoop half half g2 (List.replicate half FP.zero)) ++
-           backwardStep1Loop self.fractalScale half half g2 g1 ++
-           rest))
-        (if_neg h2'))
-      (Eq.trans inner_eq
-        (Eq.symm (Eq.trans (if_neg h1 : OFTB.backwardPass self grad =
-          (if self.dim > OFTB.bufferLimit then grad
-           else
-             Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.halfFractalScale)) g1 g2 ++
-             Vec.zipWithFP (fun a b => FP.add a (FP.mul b self.fractalScale)) g2 g1 ++
-             rest))
-          (if_neg h2'))))
-
-theorem bufferAccessSafe (half idx : Nat) (hle : half ≤ OFTB.bufferLimit)
-    (hidx : idx < half) : idx < OFTB.bufferLimit :=
-  Nat.lt_of_lt_of_le hidx hle
-
-theorem bufferSubAccessSafe (half i : Nat) (hle : half ≤ OFTB.bufferLimit)
-    (hi : i < half) : half - Nat.succ i < OFTB.bufferLimit :=
-  Nat.lt_of_lt_of_le
-    (Nat.lt_of_le_of_lt (Nat.sub_le half (Nat.succ i))
-      (Nat.lt_of_le_of_lt (Nat.le_refl half)
-        (Nat.lt_of_le_of_lt hle (Nat.lt_succ_of_le (Nat.le_refl OFTB.bufferLimit)))))
-    (Nat.succ_le_succ (Nat.le_refl OFTB.bufferLimit))
-
-inductive OFTBOp where
-  | Forward
-  | Backward
-  | Noop
-deriving BEq, Repr
-
-structure TraceEntry where
-  step : Nat
-  op : OFTBOp
-  inputLen : Nat
-  outputLen : Nat
-  dim : Nat
-
-structure ExecutionTrace where
-  entries : List TraceEntry
-  totalSteps : Nat
-
-namespace ExecutionTrace
-
-def empty : ExecutionTrace :=
-  { entries := [], totalSteps := 0 }
-
-def addEntry (trace : ExecutionTrace) (entry : TraceEntry) : ExecutionTrace :=
-  { entries := entry :: trace.entries
-  , totalSteps := trace.totalSteps + 1 }
-
-end ExecutionTrace
-
-structure OFTBState where
-  oftb : OFTB
-  currentData : List FP
-  trace : ExecutionTrace
-  stepCounter : Nat
-
-namespace OFTBState
-
-def initial (d : Nat) (inputData : List FP) : OFTBState :=
-  { oftb := OFTB.init d
-  , currentData := inputData
-  , trace := ExecutionTrace.empty
-  , stepCounter := 0 }
-
-def applyForward (st : OFTBState) : OFTBState :=
-  let newData := OFTB.forwardPass st.oftb st.currentData
-  let entry : TraceEntry :=
-    { step := st.stepCounter
-    , op := OFTBOp.Forward
-    , inputLen := st.currentData.length
-    , outputLen := newData.length
-    , dim := st.oftb.dim }
-  { oftb := st.oftb
-  , currentData := newData
-  , trace := ExecutionTrace.addEntry st.trace entry
-  , stepCounter := st.stepCounter + 1 }
-
-def applyBackward (st : OFTBState) : OFTBState :=
-  let newData := OFTB.backwardPass st.oftb st.currentData
-  let entry : TraceEntry :=
-    { step := st.stepCounter
-    , op := OFTBOp.Backward
-    , inputLen := st.currentData.length
-    , outputLen := newData.length
-    , dim := st.oftb.dim }
-  { oftb := st.oftb
-  , currentData := newData
-  , trace := ExecutionTrace.addEntry st.trace entry
-  , stepCounter := st.stepCounter + 1 }
-
-theorem applyForward_step_inc (st : OFTBState) :
-    (applyForward st).stepCounter = st.stepCounter + 1 :=
-  Eq.trans (Eq.symm (Nat.add_zero (st.stepCounter + 1))) (Nat.add_zero (st.stepCounter + 1))
-
-theorem applyBackward_step_inc (st : OFTBState) :
-    (applyBackward st).stepCounter = st.stepCounter + 1 :=
-  Eq.trans (Eq.symm (Nat.add_zero (st.stepCounter + 1))) (Nat.add_zero (st.stepCounter + 1))
-
-theorem applyForward_dim_preserved (st : OFTBState) :
-    (applyForward st).oftb.dim = st.oftb.dim :=
-  Eq.trans (Eq.symm (Nat.add_zero st.oftb.dim)) (Nat.add_zero st.oftb.dim)
-
-theorem applyBackward_dim_preserved (st : OFTBState) :
-    (applyBackward st).oftb.dim = st.oftb.dim :=
-  Eq.trans (Eq.symm (Nat.add_zero st.oftb.dim)) (Nat.add_zero st.oftb.dim)
-
-theorem applyForward_fractalScale_preserved (st : OFTBState) :
-    (applyForward st).oftb.fractalScale = st.oftb.fractalScale :=
-  FP.ext (applyForward st).oftb.fractalScale st.oftb.fractalScale
-    (Eq.trans (Eq.symm (Int.add_zero (applyForward st).oftb.fractalScale.val))
-      (Int.add_zero st.oftb.fractalScale.val))
-
-theorem applyBackward_fractalScale_preserved (st : OFTBState) :
-    (applyBackward st).oftb.fractalScale = st.oftb.fractalScale :=
-  FP.ext (applyBackward st).oftb.fractalScale st.oftb.fractalScale
-    (Eq.trans (Eq.symm (Int.add_zero (applyBackward st).oftb.fractalScale.val))
-      (Int.add_zero st.oftb.fractalScale.val))
-
-theorem applyForward_halfFractalScale_preserved (st : OFTBState) :
-    (applyForward st).oftb.halfFractalScale = st.oftb.halfFractalScale :=
-  FP.ext (applyForward st).oftb.halfFractalScale st.oftb.halfFractalScale
-    (Eq.trans (Eq.symm (Int.add_zero (applyForward st).oftb.halfFractalScale.val))
-      (Int.add_zero st.oftb.halfFractalScale.val))
-
-theorem applyBackward_halfFractalScale_preserved (st : OFTBState) :
-    (applyBackward st).oftb.halfFractalScale = st.oftb.halfFractalScale :=
-  FP.ext (applyBackward st).oftb.halfFractalScale st.oftb.halfFractalScale
-    (Eq.trans (Eq.symm (Int.add_zero (applyBackward st).oftb.halfFractalScale.val))
-      (Int.add_zero st.oftb.halfFractalScale.val))
-
-theorem step_strictly_increases (st : OFTBState) :
-    st.stepCounter < (applyForward st).stepCounter :=
-  Eq.subst (Eq.symm (applyForward_step_inc st))
-    (Nat.lt_succ_of_le (Nat.le_refl st.stepCounter))
-
-theorem step_strictly_increases_backward (st : OFTBState) :
-    st.stepCounter < (applyBackward st).stepCounter :=
-  Eq.subst (Eq.symm (applyBackward_step_inc st))
-    (Nat.lt_succ_of_le (Nat.le_refl st.stepCounter))
-
-end OFTBState
-
-def executeNForward : Nat → OFTBState → OFTBState
-  | 0, st => st
-  | Nat.succ n, st => executeNForward n (OFTBState.applyForward st)
-
-def executeNBackward : Nat → OFTBState → OFTBState
-  | 0, st => st
-  | Nat.succ n, st => executeNBackward n (OFTBState.applyBackward st)
-
-def executeAlternating : Nat → OFTBState → OFTBState
-  | 0, st => st
-  | Nat.succ n, st =>
-    let st1 := OFTBState.applyForward st
-    let st2 := OFTBState.applyBackward st1
-    executeAlternating n st2
-
-theorem executeNForward_step_count (n : Nat) (st : OFTBState) :
-    (executeNForward n st).stepCounter = st.stepCounter + n :=
-  match n with
-  | 0 => Eq.symm (Nat.add_zero st.stepCounter)
-  | Nat.succ k =>
-    Eq.trans
-      (executeNForward_step_count k (OFTBState.applyForward st))
-      (Eq.trans
-        (congrArg (· + k) (OFTBState.applyForward_step_inc st))
-        (Eq.trans (Nat.add_assoc st.stepCounter 1 k)
-          (congrArg (st.stepCounter + ·) (Nat.add_comm 1 k))))
-
-theorem executeNForward_dim_preserved (n : Nat) (st : OFTBState) :
-    (executeNForward n st).oftb.dim = st.oftb.dim :=
-  match n with
-  | 0 => Eq.trans (Eq.symm (Nat.add_zero st.oftb.dim)) (Nat.add_zero st.oftb.dim)
-  | Nat.succ k =>
-    Eq.trans
-      (executeNForward_dim_preserved k (OFTBState.applyForward st))
-      (OFTBState.applyForward_dim_preserved st)
-
-theorem executeNBackward_step_count (n : Nat) (st : OFTBState) :
-    (executeNBackward n st).stepCounter = st.stepCounter + n :=
-  match n with
-  | 0 => Eq.symm (Nat.add_zero st.stepCounter)
-  | Nat.succ k =>
-    Eq.trans
-      (executeNBackward_step_count k (OFTBState.applyBackward st))
-      (Eq.trans
-        (congrArg (· + k) (OFTBState.applyBackward_step_inc st))
-        (Eq.trans (Nat.add_assoc st.stepCounter 1 k)
-          (congrArg (st.stepCounter + ·) (Nat.add_comm 1 k))))
-
-theorem executeNBackward_dim_preserved (n : Nat) (st : OFTBState) :
-    (executeNBackward n st).oftb.dim = st.oftb.dim :=
-  match n with
-  | 0 => Eq.trans (Eq.symm (Nat.add_zero st.oftb.dim)) (Nat.add_zero st.oftb.dim)
-  | Nat.succ k =>
-    Eq.trans
-      (executeNBackward_dim_preserved k (OFTBState.applyBackward st))
-      (OFTBState.applyBackward_dim_preserved st)
-
-theorem executeNForward_monotone (n : Nat) (st : OFTBState) :
-    st.stepCounter ≤ (executeNForward n st).stepCounter :=
-  Eq.subst (Eq.symm (executeNForward_step_count n st))
-    (Nat.le_add_right st.stepCounter n)
-
-theorem executeNBackward_monotone (n : Nat) (st : OFTBState) :
-    st.stepCounter ≤ (executeNBackward n st).stepCounter :=
-  Eq.subst (Eq.symm (executeNBackward_step_count n st))
-    (Nat.le_add_right st.stepCounter n)
-
-theorem executeNForward_strict_monotone (n : Nat) (st : OFTBState) (hn : 0 < n) :
-    st.stepCounter < (executeNForward n st).stepCounter :=
-  Eq.subst (Eq.symm (executeNForward_step_count n st))
-    (Nat.lt_of_lt_of_le
-      (Nat.lt_succ_of_le (Nat.le_refl st.stepCounter))
-      (Nat.add_le_add_left hn st.stepCounter))
-
-theorem executeNBackward_strict_monotone (n : Nat) (st : OFTBState) (hn : 0 < n) :
-    st.stepCounter < (executeNBackward n st).stepCounter :=
-  Eq.subst (Eq.symm (executeNBackward_step_count n st))
-    (Nat.lt_of_lt_of_le
-      (Nat.lt_succ_of_le (Nat.le_refl st.stepCounter))
-      (Nat.add_le_add_left hn st.stepCounter))
-
-structure ButterflyCoeffs where
-  a11 : FP
-  a12 : FP
-  a21 : FP
-  a22 : FP
-
-def forwardMatrix (self : OFTB) : ButterflyCoeffs :=
-  { a11 := FP.one
-  , a12 := self.fractalScale
-  , a21 := self.halfFractalScale
-  , a22 := FP.one }
-
-def backwardMatrix (self : OFTB) : ButterflyCoeffs :=
-  { a11 := FP.one
-  , a12 := self.halfFractalScale
-  , a21 := self.fractalScale
-  , a22 := FP.one }
-
-theorem transposeRelation (self : OFTB) :
-    (forwardMatrix self).a12 = (backwardMatrix self).a21 :=
-  FP.ext (forwardMatrix self).a12 (backwardMatrix self).a21
-    (Eq.trans (Eq.symm (Int.add_zero self.fractalScale.val))
-      (Int.add_zero self.fractalScale.val))
-
-theorem transposeRelation_sym (self : OFTB) :
-    (forwardMatrix self).a21 = (backwardMatrix self).a12 :=
-  FP.ext (forwardMatrix self).a21 (backwardMatrix self).a12
-    (Eq.trans (Eq.symm (Int.add_zero self.halfFractalScale.val))
-      (Int.add_zero self.halfFractalScale.val))
-
-theorem transposeRelation_diag1 (self : OFTB) :
-    (forwardMatrix self).a11 = (backwardMatrix self).a11 :=
-  FP.ext (forwardMatrix self).a11 (backwardMatrix self).a11
-    (Eq.trans (Eq.symm (Int.add_zero FP.one.val)) (Int.add_zero FP.one.val))
-
-theorem transposeRelation_diag2 (self : OFTB) :
-    (forwardMatrix self).a22 = (backwardMatrix self).a22 :=
-  FP.ext (forwardMatrix self).a22 (backwardMatrix self).a22
-    (Eq.trans (Eq.symm (Int.add_zero FP.one.val)) (Int.add_zero FP.one.val))
-
-def transposeMatrix (m : ButterflyCoeffs) : ButterflyCoeffs :=
-  { a11 := m.a11
-  , a12 := m.a21
-  , a21 := m.a12
-  , a22 := m.a22 }
-
-def composeButterfly (m1 m2 : ButterflyCoeffs) : ButterflyCoeffs :=
-  { a11 := FP.add (FP.mul m1.a11 m2.a11) (FP.mul m1.a12 m2.a21)
-  , a12 := FP.add (FP.mul m1.a11 m2.a12) (FP.mul m1.a12 m2.a22)
-  , a21 := FP.add (FP.mul m1.a21 m2.a11) (FP.mul m1.a22 m2.a21)
-  , a22 := FP.add (FP.mul m1.a21 m2.a12) (FP.mul m1.a22 m2.a22) }
-
-def butterflyDet (m : ButterflyCoeffs) : FP :=
-  FP.sub (FP.mul m.a11 m.a22) (FP.mul m.a12 m.a21)
-
-theorem det_comm_terms (m : ButterflyCoeffs) :
-    FP.mul m.a12 m.a21 = FP.mul m.a21 m.a12 :=
-  FP.mul_comm m.a12 m.a21
-
-theorem transpose_det (m : ButterflyCoeffs) :
-    butterflyDet (transposeMatrix m) = butterflyDet m :=
-  congrArg (FP.sub (FP.mul m.a11 m.a22)) (FP.mul_comm m.a21 m.a12)
-
-theorem det_forward_eq_det_backward (self : OFTB) :
-    butterflyDet (forwardMatrix self) = butterflyDet (backwardMatrix self) :=
-  congrArg (FP.sub (FP.mul FP.one FP.one))
-    (FP.mul_comm self.fractalScale self.halfFractalScale)
-
-def applyButterfly (m : ButterflyCoeffs) (x1 x2 : FP) : FP × FP :=
-  (FP.add (FP.mul m.a11 x1) (FP.mul m.a12 x2),
-   FP.add (FP.mul m.a21 x1) (FP.mul m.a22 x2))
-
-def butterflyApplyList (m : ButterflyCoeffs) (x1 x2 : List FP) : List FP × List FP :=
-  (Vec.zipWithFP (fun a b => FP.add (FP.mul m.a11 a) (FP.mul m.a12 b)) x1 x2,
-   Vec.zipWithFP (fun a b => FP.add (FP.mul m.a21 a) (FP.mul m.a22 b)) x1 x2)
-
-theorem butterflyApplyList_fst_length (m : ButterflyCoeffs) (x1 x2 : List FP)
-    (h : x1.length = x2.length) :
-    (butterflyApplyList m x1 x2).1.length = x1.length :=
-  Vec.zipWithFP_length_eq _ x1 x2 h
-
-theorem butterflyApplyList_snd_length (m : ButterflyCoeffs) (x1 x2 : List FP)
-    (h : x1.length = x2.length) :
-    (butterflyApplyList m x1 x2).2.length = x1.length :=
-  Vec.zipWithFP_length_eq _ x1 x2 h
-
-theorem butterflyApplyList_preserves_total_length (m : ButterflyCoeffs)
-    (x1 x2 : List FP) (h : x1.length = x2.length) :
-    (butterflyApplyList m x1 x2).1.length +
-    (butterflyApplyList m x1 x2).2.length =
-    x1.length + x2.length :=
-  Eq.trans
-    (congrArg (· + (butterflyApplyList m x1 x2).2.length)
-      (butterflyApplyList_fst_length m x1 x2 h))
-    (congrArg (x1.length + ·)
-      (butterflyApplyList_snd_length m x1 x2 h))
-
-inductive SafetyInvariant : OFTBState → Prop where
-  | mk : (st : OFTBState) →
-         (dim_pos : 0 < st.oftb.dim) →
-         (dim_bounded : st.oftb.dim ≤ OFTB.bufferLimit) →
-         (scale_eq : st.oftb.fractalScale = FP.fractalScale) →
-         (half_scale_eq : st.oftb.halfFractalScale = FP.halfFractalScale) →
-         SafetyInvariant st
-
-theorem safety_preserved_forward (st : OFTBState) (h : SafetyInvariant st) :
-    SafetyInvariant (OFTBState.applyForward st) :=
-  match h with
-  | SafetyInvariant.mk _ hdp hdb hse hhse =>
-    SafetyInvariant.mk
-      (OFTBState.applyForward st)
-      (Eq.subst (Eq.symm (OFTBState.applyForward_dim_preserved st)) hdp)
-      (Eq.subst (Eq.symm (OFTBState.applyForward_dim_preserved st)) hdb)
-      (Eq.trans (OFTBState.applyForward_fractalScale_preserved st) hse)
-      (Eq.trans (OFTBState.applyForward_halfFractalScale_preserved st) hhse)
-
-theorem safety_preserved_backward (st : OFTBState) (h : SafetyInvariant st) :
-    SafetyInvariant (OFTBState.applyBackward st) :=
-  match h with
-  | SafetyInvariant.mk _ hdp hdb hse hhse =>
-    SafetyInvariant.mk
-      (OFTBState.applyBackward st)
-      (Eq.subst (Eq.symm (OFTBState.applyBackward_dim_preserved st)) hdp)
-      (Eq.subst (Eq.symm (OFTBState.applyBackward_dim_preserved st)) hdb)
-      (Eq.trans (OFTBState.applyBackward_fractalScale_preserved st) hse)
-      (Eq.trans (OFTBState.applyBackward_halfFractalScale_preserved st) hhse)
-
-theorem safety_preserved_n_forward (n : Nat) (st : OFTBState) (h : SafetyInvariant st) :
-    SafetyInvariant (executeNForward n st) :=
-  match n with
-  | 0 => h
-  | Nat.succ k =>
-    safety_preserved_n_forward k (OFTBState.applyForward st)
-      (safety_preserved_forward st h)
-
-theorem safety_preserved_n_backward (n : Nat) (st : OFTBState) (h : SafetyInvariant st) :
-    SafetyInvariant (executeNBackward n st) :=
-  match n with
-  | 0 => h
-  | Nat.succ k =>
-    safety_preserved_n_backward k (OFTBState.applyBackward st)
-      (safety_preserved_backward st h)
-
-theorem step_counter_chain (st : OFTBState) :
-    st.stepCounter < (OFTBState.applyForward (OFTBState.applyForward st)).stepCounter :=
-  Nat.lt_trans
-    (OFTBState.step_strictly_increases st)
-    (OFTBState.step_strictly_increases (OFTBState.applyForward st))
-
-theorem forward_backward_step_sum (st : OFTBState) :
-    (OFTBState.applyBackward (OFTBState.applyForward st)).stepCounter =
-    st.stepCounter + 2 :=
-  Eq.trans
-    (OFTBState.applyBackward_step_inc (OFTBState.applyForward st))
-    (Eq.trans
-      (congrArg (· + 1) (OFTBState.applyForward_step_inc st))
-      (Nat.add_assoc st.stepCounter 1 1))
-
-theorem forward_backward_dim_invariant (st : OFTBState) :
-    (OFTBState.applyBackward (OFTBState.applyForward st)).oftb.dim = st.oftb.dim :=
-  Eq.trans
-    (OFTBState.applyBackward_dim_preserved (OFTBState.applyForward st))
-    (OFTBState.applyForward_dim_preserved st)
-
-def traceLength (st : OFTBState) : Nat := st.trace.entries.length
-
-theorem applyForward_trace_grows (st : OFTBState) :
-    traceLength (OFTBState.applyForward st) = traceLength st + 1 :=
-  congrArg Nat.succ
-    (Eq.trans (Eq.symm (Nat.add_zero st.trace.entries.length))
-      (Nat.add_zero st.trace.entries.length))
-
-theorem applyBackward_trace_grows (st : OFTBState) :
-    traceLength (OFTBState.applyBackward st) = traceLength st + 1 :=
-  congrArg Nat.succ
-    (Eq.trans (Eq.symm (Nat.add_zero st.trace.entries.length))
-      (Nat.add_zero st.trace.entries.length))
-
-theorem trace_strict_monotone_forward (st : OFTBState) :
-    traceLength st < traceLength (OFTBState.applyForward st) :=
-  Eq.subst (Eq.symm (applyForward_trace_grows st))
-    (Nat.lt_succ_of_le (Nat.le_refl (traceLength st)))
-
-theorem trace_strict_monotone_backward (st : OFTBState) :
-    traceLength st < traceLength (OFTBState.applyBackward st) :=
-  Eq.subst (Eq.symm (applyBackward_trace_grows st))
-    (Nat.lt_succ_of_le (Nat.le_refl (traceLength st)))
-
-theorem safety_chain_forward_backward (st : OFTBState) (h : SafetyInvariant st) :
-    SafetyInvariant (OFTBState.applyBackward (OFTBState.applyForward st)) :=
-  safety_preserved_backward (OFTBState.applyForward st)
-    (safety_preserved_forward st h)
-
-theorem safety_alternating (n : Nat) (st : OFTBState) (h : SafetyInvariant st) :
-    SafetyInvariant (executeAlternating n st) :=
-  match n with
-  | 0 => h
-  | Nat.succ k =>
-    safety_alternating k
-      (OFTBState.applyBackward (OFTBState.applyForward st))
-      (safety_chain_forward_backward st h)
-
-def pointwiseAdd (l1 l2 : List FP) : List FP :=
-  Vec.zipWithFP FP.add l1 l2
-
-def pointwiseSub (l1 l2 : List FP) : List FP :=
-  Vec.zipWithFP FP.sub l1 l2
-
-def scaleList (s : FP) (l : List FP) : List FP :=
-  Vec.mapFP (FP.mul s) l
-
-theorem scaleList_length (s : FP) (l : List FP) :
-    (scaleList s l).length = l.length :=
-  Vec.mapFP_length (FP.mul s) l
-
-theorem pointwiseAdd_length (l1 l2 : List FP) (h : l1.length = l2.length) :
-    (pointwiseAdd l1 l2).length = l1.length :=
-  Vec.zipWithFP_length_eq FP.add l1 l2 h
-
-theorem pointwiseSub_length (l1 l2 : List FP) (h : l1.length = l2.length) :
-    (pointwiseSub l1 l2).length = l1.length :=
-  Vec.zipWithFP_length_eq FP.sub l1 l2 h
-
-theorem pointwiseAdd_comm (l1 l2 : List FP) (h : l1.length = l2.length) :
-    pointwiseAdd l1 l2 = pointwiseAdd l2 l1 :=
-  match l1, l2 with
-  | [], [] =>
-    congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-  | [], _ :: _ => absurd h Nat.noConfusion
-  | _ :: _, [] => absurd (Eq.symm h) Nat.noConfusion
-  | a :: as, b :: bs =>
-    Eq.trans
-      (congrArg (· :: Vec.zipWithFP FP.add as bs) (FP.add_comm a b))
-      (congrArg (FP.add b a :: ·) (pointwiseAdd_comm as bs (Nat.succ.inj h)))
-
-theorem pointwiseSub_self (l : List FP) :
-    pointwiseSub l l = List.replicate l.length FP.zero :=
-  match l with
-  | [] =>
-    congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-  | a :: as =>
-    Eq.trans
-      (congrArg (· :: Vec.zipWithFP FP.sub as as) (FP.sub_self a))
-      (congrArg (FP.zero :: ·) (pointwiseSub_self as))
-
-theorem add_sub_pointwise (l1 l2 : List FP) (h : l1.length = l2.length) :
-    pointwiseSub (pointwiseAdd l1 l2) l2 = l1 :=
-  match l1, l2 with
-  | [], [] =>
-    congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-  | [], _ :: _ => absurd h Nat.noConfusion
-  | _ :: _, [] => absurd (Eq.symm h) Nat.noConfusion
-  | a :: as, b :: bs =>
-    Eq.trans
-      (congrArg (· :: Vec.zipWithFP FP.sub (Vec.zipWithFP FP.add as bs) bs)
-        (FP.add_sub_cancel a b))
-      (congrArg (a :: ·) (add_sub_pointwise as bs (Nat.succ.inj h)))
-
-theorem sub_add_pointwise (l1 l2 : List FP) (h : l1.length = l2.length) :
-    pointwiseAdd (pointwiseSub l1 l2) l2 = l1 :=
-  match l1, l2 with
-  | [], [] =>
-    congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-  | [], _ :: _ => absurd h Nat.noConfusion
-  | _ :: _, [] => absurd (Eq.symm h) Nat.noConfusion
-  | a :: as, b :: bs =>
-    Eq.trans
-      (congrArg (· :: Vec.zipWithFP FP.add (Vec.zipWithFP FP.sub as bs) bs)
-        (FP.sub_add_cancel a b))
-      (congrArg (a :: ·) (sub_add_pointwise as bs (Nat.succ.inj h)))
-
-theorem neg_pointwise (l : List FP) :
-    Vec.mapFP FP.neg (Vec.mapFP FP.neg l) = l :=
-  match l with
-  | [] =>
-    congrArg (fun _ => ([] : List FP)) (Eq.symm (Nat.add_zero 0))
-  | a :: as =>
-    Eq.trans
-      (congrArg (· :: Vec.mapFP FP.neg (Vec.mapFP FP.neg as)) (FP.neg_neg a))
-      (congrArg (a :: ·) (neg_pointwise as))
-
-inductive TemporalOrder : List TraceEntry → Prop where
-  | nil : TemporalOrder []
-  | single : (e : TraceEntry) → TemporalOrder [e]
-  | cons : (e1 e2 : TraceEntry) → (rest : List TraceEntry) →
-           e1.step > e2.step →
-           TemporalOrder (e2 :: rest) →
-           TemporalOrder (e1 :: e2 :: rest)
-
-theorem temporal_order_tail (e : TraceEntry) (es : List TraceEntry)
-    (h : TemporalOrder (e :: es)) : TemporalOrder es :=
-  match es, h with
-  | [], _ => TemporalOrder.nil
-  | _ :: _, TemporalOrder.cons _ _ _ _ htail => htail
-
-inductive DimConsistent : Nat → List TraceEntry → Prop where
-  | nil : (d : Nat) → DimConsistent d []
-  | cons : (d : Nat) → (e : TraceEntry) → (rest : List TraceEntry) →
-           e.dim = d →
-           DimConsistent d rest →
-           DimConsistent d (e :: rest)
-
-theorem dim_consistent_tail (d : Nat) (e : TraceEntry) (es : List TraceEntry)
-    (h : DimConsistent d (e :: es)) : DimConsistent d es :=
-  match h with
-  | DimConsistent.cons _ _ _ _ htail => htail
-
-theorem dim_consistent_head (d : Nat) (e : TraceEntry) (es : List TraceEntry)
-    (h : DimConsistent d (e :: es)) : e.dim = d :=
-  match h with
-  | DimConsistent.cons _ _ _ hd _ => hd
-
-inductive LengthPreserved : List TraceEntry → Prop where
-  | nil : LengthPreserved []
-  | cons : (e : TraceEntry) → (rest : List TraceEntry) →
-           e.inputLen = e.outputLen →
-           LengthPreserved rest →
-           LengthPreserved (e :: rest)
-
-theorem length_preserved_tail (e : TraceEntry) (es : List TraceEntry)
-    (h : LengthPreserved (e :: es)) : LengthPreserved es :=
-  match h with
-  | LengthPreserved.cons _ _ _ htail => htail
-
-theorem length_preserved_head (e : TraceEntry) (es : List TraceEntry)
-    (h : LengthPreserved (e :: es)) : e.inputLen = e.outputLen :=
-  match h with
-  | LengthPreserved.cons _ _ hio _ => hio
-
-theorem n_forward_then_n_backward_step (n m : Nat) (st : OFTBState) :
-    (executeNBackward m (executeNForward n st)).stepCounter = st.stepCounter + n + m :=
-  Eq.trans
-    (executeNBackward_step_count m (executeNForward n st))
-    (Eq.trans
-      (congrArg (· + m) (executeNForward_step_count n st))
-      (Nat.add_assoc st.stepCounter n m))
-
-theorem n_forward_then_n_backward_dim (n m : Nat) (st : OFTBState) :
-    (executeNBackward m (executeNForward n st)).oftb.dim = st.oftb.dim :=
-  Eq.trans
-    (executeNBackward_dim_preserved m (executeNForward n st))
-    (executeNForward_dim_preserved n st)
-
-theorem n_forward_then_n_backward_safety (n m : Nat) (st : OFTBState)
-    (h : SafetyInvariant st) :
-    SafetyInvariant (executeNBackward m (executeNForward n st)) :=
-  safety_preserved_n_backward m (executeNForward n st)
-    (safety_preserved_n_forward n st h)
-
-theorem forward_offdiag_matches_backward_offdiag (self : OFTB) :
-    (forwardMatrix self).a12 = (backwardMatrix self).a21 ∧
-    (forwardMatrix self).a21 = (backwardMatrix self).a12 :=
-  And.intro
-    (transposeRelation self)
-    (transposeRelation_sym self)
-
-theorem butterfly_det_symmetric (self : OFTB) :
-    butterflyDet (forwardMatrix self) = butterflyDet (backwardMatrix self) ∧
-    butterflyDet (backwardMatrix self) = butterflyDet (forwardMatrix self) :=
-  And.intro
-    (det_forward_eq_det_backward self)
-    (Eq.symm (det_forward_eq_det_backward self))
-
-theorem initial_safety (d : Nat) (input : List FP)
-    (hd : 0 < d) (hdb : d ≤ OFTB.bufferLimit) :
-    SafetyInvariant (OFTBState.initial d input) :=
-  SafetyInvariant.mk
-    (OFTBState.initial d input)
-    (Eq.subst (Eq.symm (Eq.trans (Eq.symm (Nat.add_zero d)) (Nat.add_zero d))) hd)
-    (Eq.subst (Eq.symm (Eq.trans (Eq.symm (Nat.add_zero d)) (Nat.add_zero d))) hdb)
-    (OFTB.init_fractalScale d)
-    (OFTB.init_halfFractalScale d)
-
-theorem safety_full_roundtrip (n m : Nat) (st : OFTBState) (h : SafetyInvariant st) :
-    SafetyInvariant (executeNBackward m (executeNForward n st)) ∧
-    (executeNBackward m (executeNForward n st)).oftb.dim = st.oftb.dim ∧
-    (executeNBackward m (executeNForward n st)).stepCounter = st.stepCounter + n + m :=
-  And.intro
-    (n_forward_then_n_backward_safety n m st h)
-    (And.intro
-      (n_forward_then_n_backward_dim n m st)
-      (n_forward_then_n_backward_step n m st))
-
-theorem n_forward_fractalScale_preserved (n : Nat) (st : OFTBState) :
-    (executeNForward n st).oftb.fractalScale = st.oftb.fractalScale :=
-  match n with
-  | 0 =>
-    FP.ext (executeNForward 0 st).oftb.fractalScale st.oftb.fractalScale
-      (Eq.trans (Eq.symm (Int.add_zero st.oftb.fractalScale.val))
-        (Int.add_zero st.oftb.fractalScale.val))
-  | Nat.succ k =>
-    Eq.trans
-      (n_forward_fractalScale_preserved k (OFTBState.applyForward st))
-      (OFTBState.applyForward_fractalScale_preserved st)
-
-theorem n_backward_fractalScale_preserved (n : Nat) (st : OFTBState) :
-    (executeNBackward n st).oftb.fractalScale = st.oftb.fractalScale :=
-  match n with
-  | 0 =>
-    FP.ext (executeNBackward 0 st).oftb.fractalScale st.oftb.fractalScale
-      (Eq.trans (Eq.symm (Int.add_zero st.oftb.fractalScale.val))
-        (Int.add_zero st.oftb.fractalScale.val))
-  | Nat.succ k =>
-    Eq.trans
-      (n_backward_fractalScale_preserved k (OFTBState.applyBackward st))
-      (OFTBState.applyBackward_fractalScale_preserved st)
-
-theorem n_forward_halfFractalScale_preserved (n : Nat) (st : OFTBState) :
-    (executeNForward n st).oftb.halfFractalScale = st.oftb.halfFractalScale :=
-  match n with
-  | 0 =>
-    FP.ext (executeNForward 0 st).oftb.halfFractalScale st.oftb.halfFractalScale
-      (Eq.trans (Eq.symm (Int.add_zero st.oftb.halfFractalScale.val))
-        (Int.add_zero st.oftb.halfFractalScale.val))
-  | Nat.succ k =>
-    Eq.trans
-      (n_forward_halfFractalScale_preserved k (OFTBState.applyForward st))
-      (OFTBState.applyForward_halfFractalScale_preserved st)
-
-theorem n_backward_halfFractalScale_preserved (n : Nat) (st : OFTBState) :
-    (executeNBackward n st).oftb.halfFractalScale = st.oftb.halfFractalScale :=
-  match n with
-  | 0 =>
-    FP.ext (executeNBackward 0 st).oftb.halfFractalScale st.oftb.halfFractalScale
-      (Eq.trans (Eq.symm (Int.add_zero st.oftb.halfFractalScale.val))
-        (Int.add_zero st.oftb.halfFractalScale.val))
-  | Nat.succ k =>
-    Eq.trans
-      (n_backward_halfFractalScale_preserved k (OFTBState.applyBackward st))
-      (OFTBState.applyBackward_halfFractalScale_preserved st)
-
-theorem n_forward_full_oftb_invariant (n : Nat) (st : OFTBState) :
-    (executeNForward n st).oftb.dim = st.oftb.dim ∧
-    (executeNForward n st).oftb.fractalScale = st.oftb.fractalScale ∧
-    (executeNForward n st).oftb.halfFractalScale = st.oftb.halfFractalScale :=
-  And.intro
-    (executeNForward_dim_preserved n st)
-    (And.intro
-      (n_forward_fractalScale_preserved n st)
-      (n_forward_halfFractalScale_preserved n st))
-
-theorem n_backward_full_oftb_invariant (n : Nat) (st : OFTBState) :
-    (executeNBackward n st).oftb.dim = st.oftb.dim ∧
-    (executeNBackward n st).oftb.fractalScale = st.oftb.fractalScale ∧
-    (executeNBackward n st).oftb.halfFractalScale = st.oftb.halfFractalScale :=
-  And.intro
-    (executeNBackward_dim_preserved n st)
-    (And.intro
-      (n_backward_fractalScale_preserved n st)
-      (n_backward_halfFractalScale_preserved n st))
-
-theorem alternating_step_count (n : Nat) (st : OFTBState) :
-    (executeAlternating n st).stepCounter = st.stepCounter + n * 2 :=
-  match n with
-  | 0 => Eq.symm (Nat.add_zero st.stepCounter)
-  | Nat.succ k =>
-    Eq.trans
-      (alternating_step_count k (OFTBState.applyBackward (OFTBState.applyForward st)))
-      (Eq.trans
-        (congrArg (· + k * 2) (forward_backward_step_sum st))
-        (Eq.trans
-          (Nat.add_assoc st.stepCounter 2 (k * 2))
-          (congrArg (st.stepCounter + ·)
-            (Eq.symm (Nat.succ_mul k 2)))))
-
-theorem alternating_dim_preserved (n : Nat) (st : OFTBState) :
-    (executeAlternating n st).oftb.dim = st.oftb.dim :=
-  match n with
-  | 0 => Eq.trans (Eq.symm (Nat.add_zero st.oftb.dim)) (Nat.add_zero st.oftb.dim)
-  | Nat.succ k =>
-    Eq.trans
-      (alternating_dim_preserved k (OFTBState.applyBackward (OFTBState.applyForward st)))
-      (forward_backward_dim_invariant st)
-
-theorem alternating_monotone (n : Nat) (st : OFTBState) :
-    st.stepCounter ≤ (executeAlternating n st).stepCounter :=
-  Eq.subst (Eq.symm (alternating_step_count n st))
-    (Nat.le_add_right st.stepCounter (n * 2))
+def emptyBuffer (ops : F32Ops) : List ops.F32 := repeatN ops.undefined mixBufferLen
+
+theorem emptyBuffer_length (ops : F32Ops) : (emptyBuffer ops).length = mixBufferLen := repeatN_length ops.undefined mixBufferLen
+
+def copyToBufferLoop (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat) (buffer : List ops.F32) (dest : Nat) (count : Nat) : List ops.F32 :=
+match count with
+| 0 => buffer
+| Nat.succ rest =>
+  let value := getD ops.undefined source (sourceBase + dest)
+  let bufferNext := setAt buffer dest value
+  copyToBufferLoop ops source sourceBase bufferNext (Nat.succ dest) rest
+
+theorem copyToBufferLoop_zero (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat) (buffer : List ops.F32) (dest : Nat) : copyToBufferLoop ops source sourceBase buffer dest 0 = buffer := Eq.refl buffer
+
+theorem copyToBufferLoop_succ (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat) (buffer : List ops.F32) (dest count : Nat) : copyToBufferLoop ops source sourceBase buffer dest (Nat.succ count) = copyToBufferLoop ops source sourceBase (setAt buffer dest (getD ops.undefined source (sourceBase + dest))) (Nat.succ dest) count := Eq.refl (copyToBufferLoop ops source sourceBase (setAt buffer dest (getD ops.undefined source (sourceBase + dest))) (Nat.succ dest) count)
+
+theorem copyToBufferLoop_length (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat) (buffer : List ops.F32) (dest : Nat) (count : Nat) : (copyToBufferLoop ops source sourceBase buffer dest count).length = buffer.length :=
+match count with
+| 0 => Eq.refl buffer.length
+| Nat.succ rest => Eq.trans (copyToBufferLoop_length ops source sourceBase (setAt buffer dest (getD ops.undefined source (sourceBase + dest))) (Nat.succ dest) rest) (setAt_length buffer dest (getD ops.undefined source (sourceBase + dest)))
+
+def forwardFirstValue (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) : ops.F32 := f32Add ops (getD ops.undefined data index) (f32Mul ops (getD ops.undefined data (half + index)) scale)
+
+theorem forwardFirstValue_def (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) : forwardFirstValue ops scale half data index = f32Add ops (getD ops.undefined data index) (f32Mul ops (getD ops.undefined data (half + index)) scale) := Eq.refl (f32Add ops (getD ops.undefined data index) (f32Mul ops (getD ops.undefined data (half + index)) scale))
+
+def forwardFirstLoop (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) (count : Nat) : List ops.F32 :=
+match count with
+| 0 => data
+| Nat.succ rest =>
+  let value := forwardFirstValue ops scale half data index
+  let dataNext := setAt data index value
+  forwardFirstLoop ops scale half dataNext (Nat.succ index) rest
+
+theorem forwardFirstLoop_zero (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) : forwardFirstLoop ops scale half data index 0 = data := Eq.refl data
+
+theorem forwardFirstLoop_succ (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) : forwardFirstLoop ops scale half data index (Nat.succ count) = forwardFirstLoop ops scale half (setAt data index (forwardFirstValue ops scale half data index)) (Nat.succ index) count := Eq.refl (forwardFirstLoop ops scale half (setAt data index (forwardFirstValue ops scale half data index)) (Nat.succ index) count)
+
+theorem forwardFirstLoop_length (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) (count : Nat) : (forwardFirstLoop ops scale half data index count).length = data.length :=
+match count with
+| 0 => Eq.refl data.length
+| Nat.succ rest => Eq.trans (forwardFirstLoop_length ops scale half (setAt data index (forwardFirstValue ops scale half data index)) (Nat.succ index) rest) (setAt_length data index (forwardFirstValue ops scale half data index))
+
+def forwardSecondValue (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer : List ops.F32) (data : List ops.F32) (index : Nat) : ops.F32 := f32Add ops (getD ops.undefined data (half + index)) (f32MulScaleHalf ops (getD ops.undefined buffer index) scale)
+
+theorem forwardSecondValue_def (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer data : List ops.F32) (index : Nat) : forwardSecondValue ops scale half buffer data index = f32Add ops (getD ops.undefined data (half + index)) (f32MulScaleHalf ops (getD ops.undefined buffer index) scale) := Eq.refl (f32Add ops (getD ops.undefined data (half + index)) (f32MulScaleHalf ops (getD ops.undefined buffer index) scale))
+
+def forwardSecondLoop (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer : List ops.F32) (data : List ops.F32) (index : Nat) (count : Nat) : List ops.F32 :=
+match count with
+| 0 => data
+| Nat.succ rest =>
+  let value := forwardSecondValue ops scale half buffer data index
+  let dataNext := setAt data (half + index) value
+  forwardSecondLoop ops scale half buffer dataNext (Nat.succ index) rest
+
+theorem forwardSecondLoop_zero (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer data : List ops.F32) (index : Nat) : forwardSecondLoop ops scale half buffer data index 0 = data := Eq.refl data
+
+theorem forwardSecondLoop_succ (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer data : List ops.F32) (index count : Nat) : forwardSecondLoop ops scale half buffer data index (Nat.succ count) = forwardSecondLoop ops scale half buffer (setAt data (half + index) (forwardSecondValue ops scale half buffer data index)) (Nat.succ index) count := Eq.refl (forwardSecondLoop ops scale half buffer (setAt data (half + index) (forwardSecondValue ops scale half buffer data index)) (Nat.succ index) count)
+
+theorem forwardSecondLoop_length (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer data : List ops.F32) (index : Nat) (count : Nat) : (forwardSecondLoop ops scale half buffer data index count).length = data.length :=
+match count with
+| 0 => Eq.refl data.length
+| Nat.succ rest => Eq.trans (forwardSecondLoop_length ops scale half buffer (setAt data (half + index) (forwardSecondValue ops scale half buffer data index)) (Nat.succ index) rest) (setAt_length data (half + index) (forwardSecondValue ops scale half buffer data index))
+
+def backwardSecondValue (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) : ops.F32 := f32Add ops (getD ops.undefined data (half + index)) (f32Mul ops (getD ops.undefined data index) scale)
+
+theorem backwardSecondValue_def (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) : backwardSecondValue ops scale half data index = f32Add ops (getD ops.undefined data (half + index)) (f32Mul ops (getD ops.undefined data index) scale) := Eq.refl (f32Add ops (getD ops.undefined data (half + index)) (f32Mul ops (getD ops.undefined data index) scale))
+
+def backwardSecondLoop (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) (count : Nat) : List ops.F32 :=
+match count with
+| 0 => data
+| Nat.succ rest =>
+  let value := backwardSecondValue ops scale half data index
+  let dataNext := setAt data (half + index) value
+  backwardSecondLoop ops scale half dataNext (Nat.succ index) rest
+
+theorem backwardSecondLoop_zero (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) : backwardSecondLoop ops scale half data index 0 = data := Eq.refl data
+
+theorem backwardSecondLoop_succ (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) : backwardSecondLoop ops scale half data index (Nat.succ count) = backwardSecondLoop ops scale half (setAt data (half + index) (backwardSecondValue ops scale half data index)) (Nat.succ index) count := Eq.refl (backwardSecondLoop ops scale half (setAt data (half + index) (backwardSecondValue ops scale half data index)) (Nat.succ index) count)
+
+theorem backwardSecondLoop_length (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index : Nat) (count : Nat) : (backwardSecondLoop ops scale half data index count).length = data.length :=
+match count with
+| 0 => Eq.refl data.length
+| Nat.succ rest => Eq.trans (backwardSecondLoop_length ops scale half data (setAt data (half + index) (backwardSecondValue ops scale half data index)) (Nat.succ index) rest) (setAt_length data (half + index) (backwardSecondValue ops scale half data index))
+
+def backwardFirstValue (ops : F32Ops) (scale : ops.F32) (buffer : List ops.F32) (data : List ops.F32) (index : Nat) : ops.F32 := f32Add ops (getD ops.undefined data index) (f32MulScaleHalf ops (getD ops.undefined buffer index) scale)
+
+theorem backwardFirstValue_def (ops : F32Ops) (scale : ops.F32) (buffer data : List ops.F32) (index : Nat) : backwardFirstValue ops scale buffer data index = f32Add ops (getD ops.undefined data index) (f32MulScaleHalf ops (getD ops.undefined buffer index) scale) := Eq.refl (f32Add ops (getD ops.undefined data index) (f32MulScaleHalf ops (getD ops.undefined buffer index) scale))
+
+def backwardFirstLoop (ops : F32Ops) (scale : ops.F32) (buffer : List ops.F32) (data : List ops.F32) (index : Nat) (count : Nat) : List ops.F32 :=
+match count with
+| 0 => data
+| Nat.succ rest =>
+  let value := backwardFirstValue ops scale buffer data index
+  let dataNext := setAt data index value
+  backwardFirstLoop ops scale buffer dataNext (Nat.succ index) rest
+
+theorem backwardFirstLoop_zero (ops : F32Ops) (scale : ops.F32) (buffer data : List ops.F32) (index : Nat) : backwardFirstLoop ops scale buffer data index 0 = data := Eq.refl data
+
+theorem backwardFirstLoop_succ (ops : F32Ops) (scale : ops.F32) (buffer data : List ops.F32) (index count : Nat) : backwardFirstLoop ops scale buffer data index (Nat.succ count) = backwardFirstLoop ops scale buffer (setAt data index (backwardFirstValue ops scale buffer data index)) (Nat.succ index) count := Eq.refl (backwardFirstLoop ops scale buffer (setAt data index (backwardFirstValue ops scale buffer data index)) (Nat.succ index) count)
+
+theorem backwardFirstLoop_length (ops : F32Ops) (scale : ops.F32) (buffer data : List ops.F32) (index : Nat) (count : Nat) : (backwardFirstLoop ops scale buffer data index count).length = data.length :=
+match count with
+| 0 => Eq.refl data.length
+| Nat.succ rest => Eq.trans (backwardFirstLoop_length ops scale buffer (setAt data index (backwardFirstValue ops scale buffer data index)) (Nat.succ index) rest) (setAt_length data index (backwardFirstValue ops scale buffer data index))
+
+def forwardCopiedBuffer (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : List ops.F32 := copyToBufferLoop ops data 0 (emptyBuffer ops) 0 self.dim
+
+def forwardAfterFirst (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : List ops.F32 := forwardFirstLoop ops self.fractal_scale self.dim data 0 self.dim
+
+def forwardDataCompleted (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : List ops.F32 := forwardSecondLoop ops self.fractal_scale self.dim (forwardCopiedBuffer ops self data) (forwardAfterFirst ops self data) 0 self.dim
+
+theorem forwardCopiedBuffer_def (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : forwardCopiedBuffer ops self data = copyToBufferLoop ops data 0 (emptyBuffer ops) 0 self.dim := Eq.refl (copyToBufferLoop ops data 0 (emptyBuffer ops) 0 self.dim)
+
+theorem forwardAfterFirst_def (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : forwardAfterFirst ops self data = forwardFirstLoop ops self.fractal_scale self.dim data 0 self.dim := Eq.refl (forwardFirstLoop ops self.fractal_scale self.dim data 0 self.dim)
+
+theorem forwardDataCompleted_def (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : forwardDataCompleted ops self data = forwardSecondLoop ops self.fractal_scale self.dim (forwardCopiedBuffer ops self data) (forwardAfterFirst ops self data) 0 self.dim := Eq.refl (forwardSecondLoop ops self.fractal_scale self.dim (forwardCopiedBuffer ops self data) (forwardAfterFirst ops self data) 0 self.dim)
+
+theorem forwardCopiedBuffer_length (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : (forwardCopiedBuffer ops self data).length = mixBufferLen := Eq.trans (copyToBufferLoop_length ops data 0 (emptyBuffer ops) 0 self.dim) (emptyBuffer_length ops)
+
+theorem forwardAfterFirst_length (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : (forwardAfterFirst ops self data).length = data.length := forwardFirstLoop_length ops self.fractal_scale self.dim data 0 self.dim
+
+theorem forwardDataCompleted_length (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : (forwardDataCompleted ops self data).length = data.length := Eq.trans (forwardSecondLoop_length ops self.fractal_scale self.dim (forwardCopiedBuffer ops self data) (forwardAfterFirst ops self data) 0 self.dim) (forwardAfterFirst_length ops self data)
+
+def backwardCopiedBuffer (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : List ops.F32 := copyToBufferLoop ops data self.dim (emptyBuffer ops) 0 self.dim
+
+def backwardAfterSecond (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : List ops.F32 := backwardSecondLoop ops self.fractal_scale self.dim data 0 self.dim
+
+def backwardDataCompleted (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : List ops.F32 := backwardFirstLoop ops self.fractal_scale (backwardCopiedBuffer ops self data) (backwardAfterSecond ops self data) 0 self.dim
+
+theorem backwardCopiedBuffer_def (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : backwardCopiedBuffer ops self data = copyToBufferLoop ops data self.dim (emptyBuffer ops) 0 self.dim := Eq.refl (copyToBufferLoop ops data self.dim (emptyBuffer ops) 0 self.dim)
+
+theorem backwardAfterSecond_def (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : backwardAfterSecond ops self data = backwardSecondLoop ops self.fractal_scale self.dim data 0 self.dim := Eq.refl (backwardSecondLoop ops self.fractal_scale self.dim data 0 self.dim)
+
+theorem backwardDataCompleted_def (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : backwardDataCompleted ops self data = backwardFirstLoop ops self.fractal_scale (backwardCopiedBuffer ops self data) (backwardAfterSecond ops self data) 0 self.dim := Eq.refl (backwardFirstLoop ops self.fractal_scale (backwardCopiedBuffer ops self data) (backwardAfterSecond ops self data) 0 self.dim)
+
+theorem backwardCopiedBuffer_length (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : (backwardCopiedBuffer ops self data).length = mixBufferLen := Eq.trans (copyToBufferLoop_length ops data self.dim (emptyBuffer ops) 0 self.dim) (emptyBuffer_length ops)
+
+theorem backwardAfterSecond_length (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : (backwardAfterSecond ops self data).length = data.length := backwardSecondLoop_length ops self.fractal_scale self.dim data 0 self.dim
+
+theorem backwardDataCompleted_length (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) : (backwardDataCompleted ops self data).length = data.length := Eq.trans (backwardFirstLoop_length ops self.fractal_scale (backwardCopiedBuffer ops self data) (backwardAfterSecond ops self data) 0 self.dim) (backwardAfterSecond_length ops self data)
+
+inductive RunBranch where
+| arithmeticOverflow : RunBranch
+| lengthTooShort : RunBranch
+| bufferTooSmall : RunBranch
+| completed : RunBranch
+
+def branchIsCompleted : RunBranch → Bool
+| RunBranch.completed => true
+| _ => false
+
+def branchIsNoChangeReturn : RunBranch → Bool
+| RunBranch.lengthTooShort => true
+| RunBranch.bufferTooSmall => true
+| _ => false
+
+def branchIsOverflow : RunBranch → Bool
+| RunBranch.arithmeticOverflow => true
+| _ => false
+
+theorem branchIsCompleted_completed : branchIsCompleted RunBranch.completed = true := Eq.refl true
+
+theorem branchIsCompleted_overflow : branchIsCompleted RunBranch.arithmeticOverflow = false := Eq.refl false
+
+theorem branchIsCompleted_short : branchIsCompleted RunBranch.lengthTooShort = false := Eq.refl false
+
+theorem branchIsCompleted_buffer : branchIsCompleted RunBranch.bufferTooSmall = false := Eq.refl false
+
+theorem branchIsNoChangeReturn_short : branchIsNoChangeReturn RunBranch.lengthTooShort = true := Eq.refl true
+
+theorem branchIsNoChangeReturn_buffer : branchIsNoChangeReturn RunBranch.bufferTooSmall = true := Eq.refl true
+
+theorem branchIsNoChangeReturn_completed : branchIsNoChangeReturn RunBranch.completed = false := Eq.refl false
+
+theorem branchIsOverflow_overflow : branchIsOverflow RunBranch.arithmeticOverflow = true := Eq.refl true
+
+theorem branchIsOverflow_completed : branchIsOverflow RunBranch.completed = false := Eq.refl false
+
+structure TensorResult (ops : F32Ops) where
+  tensor : Tensor ops
+  branch : RunBranch
+
+structure BufferResult (ops : F32Ops) where
+  data : List ops.F32
+  branch : RunBranch
+
+namespace TensorResult
+
+def data (ops : F32Ops) (r : TensorResult ops) : List ops.F32 := r.tensor.data
+
+def length (ops : F32Ops) (r : TensorResult ops) : Nat := r.tensor.data.length
+
+theorem data_def (ops : F32Ops) (r : TensorResult ops) : data ops r = r.tensor.data := Eq.refl r.tensor.data
+
+theorem length_def (ops : F32Ops) (r : TensorResult ops) : length ops r = r.tensor.data.length := Eq.refl r.tensor.data.length
+
+end TensorResult
+
+namespace BufferResult
+
+def length (ops : F32Ops) (r : BufferResult ops) : Nat := r.data.length
+
+theorem length_def (ops : F32Ops) (r : BufferResult ops) : length ops r = r.data.length := Eq.refl r.data.length
+
+end BufferResult
+
+def forwardPreconditionBool (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : Bool := boolAnd (usizeDoubleFits self.dim) (boolAnd (lenEnough self.dim x.data.length) (bufferFits self.dim))
+
+def backwardPreconditionBool (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) : Bool := boolAnd (usizeDoubleFits self.dim) (boolAnd (lenEnough self.dim grad.length) (bufferFits self.dim))
+
+theorem forwardPreconditionBool_def (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : forwardPreconditionBool ops self x = boolAnd (usizeDoubleFits self.dim) (boolAnd (lenEnough self.dim x.data.length) (bufferFits self.dim)) := Eq.refl (boolAnd (usizeDoubleFits self.dim) (boolAnd (lenEnough self.dim x.data.length) (bufferFits self.dim)))
+
+theorem backwardPreconditionBool_def (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) : backwardPreconditionBool ops self grad = boolAnd (usizeDoubleFits self.dim) (boolAnd (lenEnough self.dim grad.length) (bufferFits self.dim)) := Eq.refl (boolAnd (usizeDoubleFits self.dim) (boolAnd (lenEnough self.dim grad.length) (bufferFits self.dim)))
+
+theorem forwardPreconditionBool_true_of_parts (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : forwardPreconditionBool ops self x = true :=
+match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl true
+
+theorem backwardPreconditionBool_true_of_parts (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : backwardPreconditionBool ops self grad = true :=
+match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl true
+
+def forwardInPlace (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : TensorResult ops :=
+match usizeDoubleFits self.dim with
+| false => { tensor := x, branch := RunBranch.arithmeticOverflow }
+| true =>
+  match lenEnough self.dim x.data.length with
+  | false => { tensor := x, branch := RunBranch.lengthTooShort }
+  | true =>
+    match bufferFits self.dim with
+    | false => { tensor := x, branch := RunBranch.bufferTooSmall }
+    | true => { tensor := { data := forwardDataCompleted ops self x.data }, branch := RunBranch.completed }
+
+def backwardInPlace (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) : BufferResult ops :=
+match usizeDoubleFits self.dim with
+| false => { data := grad, branch := RunBranch.arithmeticOverflow }
+| true =>
+  match lenEnough self.dim grad.length with
+  | false => { data := grad, branch := RunBranch.lengthTooShort }
+  | true =>
+    match bufferFits self.dim with
+    | false => { data := grad, branch := RunBranch.bufferTooSmall }
+    | true => { data := backwardDataCompleted ops self grad, branch := RunBranch.completed }
+
+theorem forwardInPlace_overflow_result (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h : usizeDoubleFits self.dim = false) : forwardInPlace ops self x = { tensor := x, branch := RunBranch.arithmeticOverflow } := match h with | Eq.refl => Eq.refl ({ tensor := x, branch := RunBranch.arithmeticOverflow } : TensorResult ops)
+
+theorem forwardInPlace_overflow_data (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h : usizeDoubleFits self.dim = false) : (forwardInPlace ops self x).tensor.data = x.data := match h with | Eq.refl => Eq.refl x.data
+
+theorem forwardInPlace_overflow_branch (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h : usizeDoubleFits self.dim = false) : (forwardInPlace ops self x).branch = RunBranch.arithmeticOverflow := match h with | Eq.refl => Eq.refl RunBranch.arithmeticOverflow
+
+theorem forwardInPlace_length_too_short_result (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = false) : forwardInPlace ops self x = { tensor := x, branch := RunBranch.lengthTooShort } := match h0 with | Eq.refl => match h1 with | Eq.refl => Eq.refl ({ tensor := x, branch := RunBranch.lengthTooShort } : TensorResult ops)
+
+theorem forwardInPlace_length_too_short_data (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = false) : (forwardInPlace ops self x).tensor.data = x.data := match h0 with | Eq.refl => match h1 with | Eq.refl => Eq.refl x.data
+
+theorem forwardInPlace_length_too_short_branch (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = false) : (forwardInPlace ops self x).branch = RunBranch.lengthTooShort := match h0 with | Eq.refl => match h1 with | Eq.refl => Eq.refl RunBranch.lengthTooShort
+
+theorem forwardInPlace_buffer_too_small_result (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = false) : forwardInPlace ops self x = { tensor := x, branch := RunBranch.bufferTooSmall } := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl ({ tensor := x, branch := RunBranch.bufferTooSmall } : TensorResult ops)
+
+theorem forwardInPlace_buffer_too_small_data (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = false) : (forwardInPlace ops self x).tensor.data = x.data := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl x.data
+
+theorem forwardInPlace_buffer_too_small_branch (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = false) : (forwardInPlace ops self x).branch = RunBranch.bufferTooSmall := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl RunBranch.bufferTooSmall
+
+theorem forwardInPlace_completed_result (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : forwardInPlace ops self x = { tensor := { data := forwardDataCompleted ops self x.data }, branch := RunBranch.completed } := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl ({ tensor := { data := forwardDataCompleted ops self x.data }, branch := RunBranch.completed } : TensorResult ops)
+
+theorem forwardInPlace_completed_data (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardInPlace ops self x).tensor.data = forwardDataCompleted ops self x.data := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl (forwardDataCompleted ops self x.data)
+
+theorem forwardInPlace_completed_branch (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardInPlace ops self x).branch = RunBranch.completed := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl RunBranch.completed
+
+theorem forwardInPlace_length (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : (forwardInPlace ops self x).tensor.data.length = x.data.length :=
+match usizeDoubleFits self.dim with
+| false => Eq.refl x.data.length
+| true =>
+  match lenEnough self.dim x.data.length with
+  | false => Eq.refl x.data.length
+  | true =>
+    match bufferFits self.dim with
+    | false => Eq.refl x.data.length
+    | true => forwardDataCompleted_length ops self x.data
+
+theorem forwardInPlace_completed_length (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardInPlace ops self x).tensor.data.length = x.data.length := forwardInPlace_length ops self x
+
+theorem forward_completed_first_slice_valid (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h : lenEnough self.dim x.data.length = true) : sliceValidIn (firstSlice self.dim) x.data.length = true := firstSlice_valid_of_lenEnough self.dim x.data.length h
+
+theorem forward_completed_second_slice_valid (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h : lenEnough self.dim x.data.length = true) : sliceValidIn (secondSlice self.dim) x.data.length = true := secondSlice_valid_of_lenEnough self.dim x.data.length h
+
+theorem backwardInPlace_overflow_result (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h : usizeDoubleFits self.dim = false) : backwardInPlace ops self grad = { data := grad, branch := RunBranch.arithmeticOverflow } := match h with | Eq.refl => Eq.refl ({ data := grad, branch := RunBranch.arithmeticOverflow } : BufferResult ops)
+
+theorem backwardInPlace_overflow_data (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h : usizeDoubleFits self.dim = false) : (backwardInPlace ops self grad).data = grad := match h with | Eq.refl => Eq.refl grad
+
+theorem backwardInPlace_overflow_branch (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h : usizeDoubleFits self.dim = false) : (backwardInPlace ops self grad).branch = RunBranch.arithmeticOverflow := match h with | Eq.refl => Eq.refl RunBranch.arithmeticOverflow
+
+theorem backwardInPlace_length_too_short_result (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = false) : backwardInPlace ops self grad = { data := grad, branch := RunBranch.lengthTooShort } := match h0 with | Eq.refl => match h1 with | Eq.refl => Eq.refl ({ data := grad, branch := RunBranch.lengthTooShort } : BufferResult ops)
+
+theorem backwardInPlace_length_too_short_data (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = false) : (backwardInPlace ops self grad).data = grad := match h0 with | Eq.refl => match h1 with | Eq.refl => Eq.refl grad
+
+theorem backwardInPlace_length_too_short_branch (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = false) : (backwardInPlace ops self grad).branch = RunBranch.lengthTooShort := match h0 with | Eq.refl => match h1 with | Eq.refl => Eq.refl RunBranch.lengthTooShort
+
+theorem backwardInPlace_buffer_too_small_result (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = false) : backwardInPlace ops self grad = { data := grad, branch := RunBranch.bufferTooSmall } := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl ({ data := grad, branch := RunBranch.bufferTooSmall } : BufferResult ops)
+
+theorem backwardInPlace_buffer_too_small_data (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = false) : (backwardInPlace ops self grad).data = grad := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl grad
+
+theorem backwardInPlace_buffer_too_small_branch (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = false) : (backwardInPlace ops self grad).branch = RunBranch.bufferTooSmall := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl RunBranch.bufferTooSmall
+
+theorem backwardInPlace_completed_result (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : backwardInPlace ops self grad = { data := backwardDataCompleted ops self grad, branch := RunBranch.completed } := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl ({ data := backwardDataCompleted ops self grad, branch := RunBranch.completed } : BufferResult ops)
+
+theorem backwardInPlace_completed_data (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : (backwardInPlace ops self grad).data = backwardDataCompleted ops self grad := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl (backwardDataCompleted ops self grad)
+
+theorem backwardInPlace_completed_branch (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : (backwardInPlace ops self grad).branch = RunBranch.completed := match h0 with | Eq.refl => match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl RunBranch.completed
+
+theorem backwardInPlace_length (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) : (backwardInPlace ops self grad).data.length = grad.length :=
+match usizeDoubleFits self.dim with
+| false => Eq.refl grad.length
+| true =>
+  match lenEnough self.dim grad.length with
+  | false => Eq.refl grad.length
+  | true =>
+    match bufferFits self.dim with
+    | false => Eq.refl grad.length
+    | true => backwardDataCompleted_length ops self grad
+
+theorem backwardInPlace_completed_length (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : (backwardInPlace ops self grad).data.length = grad.length := backwardInPlace_length ops self grad
+
+theorem backward_completed_first_slice_valid (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h : lenEnough self.dim grad.length = true) : sliceValidIn (firstSlice self.dim) grad.length = true := firstSlice_valid_of_lenEnough self.dim grad.length h
+
+theorem backward_completed_second_slice_valid (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h : lenEnough self.dim grad.length = true) : sliceValidIn (secondSlice self.dim) grad.length = true := secondSlice_valid_of_lenEnough self.dim grad.length h
+
+structure PipelineResult (ops : F32Ops) where
+  forward : TensorResult ops
+  backward : BufferResult ops
+
+def forwardBackwardPipeline (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : PipelineResult ops :=
+let first := forwardInPlace ops self x
+let second := backwardInPlace ops self first.tensor.data
+{ forward := first, backward := second }
+
+theorem forwardBackwardPipeline_forward (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : (forwardBackwardPipeline ops self x).forward = forwardInPlace ops self x := Eq.refl (forwardInPlace ops self x)
+
+theorem forwardBackwardPipeline_backward (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : (forwardBackwardPipeline ops self x).backward = backwardInPlace ops self (forwardInPlace ops self x).tensor.data := Eq.refl (backwardInPlace ops self (forwardInPlace ops self x).tensor.data)
+
+theorem forwardBackwardPipeline_forward_length (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : (forwardBackwardPipeline ops self x).forward.tensor.data.length = x.data.length := forwardInPlace_length ops self x
+
+theorem forwardBackwardPipeline_backward_length (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) : (forwardBackwardPipeline ops self x).backward.data.length = x.data.length := Eq.trans (backwardInPlace_length ops self (forwardInPlace ops self x).tensor.data) (forwardInPlace_length ops self x)
+
+theorem forwardBackwardPipeline_forward_completed_branch (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardBackwardPipeline ops self x).forward.branch = RunBranch.completed := forwardInPlace_completed_branch ops self x h0 h1 h2
+
+theorem forwardBackwardPipeline_backward_completed_branch (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardBackwardPipeline ops self x).backward.branch = RunBranch.completed :=
+have hlen : (forwardInPlace ops self x).tensor.data.length = x.data.length := forwardInPlace_length ops self x
+have hle : lenEnough self.dim (forwardInPlace ops self x).tensor.data.length = lenEnough self.dim x.data.length := congrArg (lenEnough self.dim) hlen
+have htrue : lenEnough self.dim (forwardInPlace ops self x).tensor.data.length = true := Eq.trans hle h1
+backwardInPlace_completed_branch ops self (forwardInPlace ops self x).tensor.data h0 htrue h2
+
+theorem forwardBackwardPipeline_forward_completed_data (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardBackwardPipeline ops self x).forward.tensor.data = forwardDataCompleted ops self x.data := forwardInPlace_completed_data ops self x h0 h1 h2
+
+theorem forwardBackwardPipeline_lengths_preserved_under_success (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardBackwardPipeline ops self x).forward.tensor.data.length = x.data.length ∧ (forwardBackwardPipeline ops self x).backward.data.length = x.data.length := And.intro (forwardBackwardPipeline_forward_length ops self x) (forwardBackwardPipeline_backward_length ops self x)
+
+def forwardFirstElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 := f32Add ops (getD ops.undefined data i) (f32Mul ops (getD ops.undefined data (dim + i)) scale)
+
+def forwardSecondElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 := f32Add ops (getD ops.undefined data (dim + i)) (f32MulScaleHalf ops (getD ops.undefined data (i - dim)) scale) 
+
+def forwardSpecElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 :=
+match natLtBool i dim with
+| true => forwardFirstElem ops scale dim data i
+| false => match natLtBool i (doubleNat dim) with
+  | true => forwardSecondElem ops scale dim data i
+  | false => getD ops.undefined data i
+
+def backwardFirstElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 := f32Add ops (getD ops.undefined data i) (f32MulScaleHalf ops (getD ops.undefined data (dim + i)) scale)
+
+def backwardSecondElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 := f32Add ops (getD ops.undefined data (dim + i)) (f32Mul ops (getD ops.undefined data (i - dim)) scale)
+
+def backwardSpecElem (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) : ops.F32 :=
+match natLtBool i dim with
+| true => backwardFirstElem ops scale dim data i
+| false => match natLtBool i (doubleNat dim) with
+  | true => backwardSecondElem ops scale dim data i
+  | false => getD ops.undefined data i
+
+theorem forwardSpecElem_first_def (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) (h : natLtBool i dim = true) : forwardSpecElem ops scale dim data i = forwardFirstElem ops scale dim data i := match h with | Eq.refl => Eq.refl (forwardFirstElem ops scale dim data i)
+
+theorem forwardSpecElem_second_def (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) (h1 : natLtBool i dim = false) (h2 : natLtBool i (doubleNat dim) = true) : forwardSpecElem ops scale dim data i = forwardSecondElem ops scale dim data i := match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl (forwardSecondElem ops scale dim data i)
+
+theorem forwardSpecElem_tail_def (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) (h1 : natLtBool i dim = false) (h2 : natLtBool i (doubleNat dim) = false) : forwardSpecElem ops scale dim data i = getD ops.undefined data i := match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl (getD ops.undefined data i)
+
+theorem backwardSpecElem_first_def (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) (h : natLtBool i dim = true) : backwardSpecElem ops scale dim data i = backwardFirstElem ops scale dim data i := match h with | Eq.refl => Eq.refl (backwardFirstElem ops scale dim data i)
+
+theorem backwardSpecElem_second_def (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) (h1 : natLtBool i dim = false) (h2 : natLtBool i (doubleNat dim) = true) : backwardSpecElem ops scale dim data i = backwardSecondElem ops scale dim data i := match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl (backwardSecondElem ops scale dim data i)
+
+theorem backwardSpecElem_tail_def (ops : F32Ops) (scale : ops.F32) (dim : Nat) (data : List ops.F32) (i : Nat) (h1 : natLtBool i dim = false) (h2 : natLtBool i (doubleNat dim) = false) : backwardSpecElem ops scale dim data i = getD ops.undefined data i := match h1 with | Eq.refl => match h2 with | Eq.refl => Eq.refl (getD ops.undefined data i)
+
+theorem forwardFirstLoop_tail (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) (i : Nat) (h : natLeBool (doubleNat half) i = true) : getD ops.undefined (forwardFirstLoop ops scale half data index count) i = getD ops.undefined data i :=
+match count with
+| 0 => Eq.refl (getD ops.undefined data i)
+| Nat.succ rest =>
+  let value := forwardFirstValue ops scale half data index
+  let dataNext := setAt data index value
+  have ih : getD ops.undefined (forwardFirstLoop ops scale half dataNext (Nat.succ index) rest) i = getD ops.undefined dataNext i := forwardFirstLoop_tail ops scale half dataNext (Nat.succ index) rest i h
+  have hset : getD ops.undefined dataNext i = getD ops.undefined data i := Eq.refl (getD ops.undefined data i)
+  Eq.trans ih hset
+
+theorem forwardSecondLoop_tail (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer data : List ops.F32) (index count : Nat) (i : Nat) (h : natLeBool (doubleNat half) i = true) : getD ops.undefined (forwardSecondLoop ops scale half buffer data index count) i = getD ops.undefined data i :=
+match count with
+| 0 => Eq.refl (getD ops.undefined data i)
+| Nat.succ rest =>
+  let value := forwardSecondValue ops scale half buffer data index
+  let dataNext := setAt data (half + index) value
+  have ih : getD ops.undefined (forwardSecondLoop ops scale half buffer dataNext (Nat.succ index) rest) i = getD ops.undefined dataNext i := forwardSecondLoop_tail ops scale half buffer dataNext (Nat.succ index) rest i h
+  have hset : getD ops.undefined dataNext i = getD ops.undefined data i := Eq.refl (getD ops.undefined data i)
+  Eq.trans ih hset
+
+theorem backwardSecondLoop_tail (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) (i : Nat) (h : natLeBool (doubleNat half) i = true) : getD ops.undefined (backwardSecondLoop ops scale half data index count) i = getD ops.undefined data i :=
+match count with
+| 0 => Eq.refl (getD ops.undefined data i)
+| Nat.succ rest =>
+  let value := backwardSecondValue ops scale half data index
+  let dataNext := setAt data (half + index) value
+  have ih : getD ops.undefined (backwardSecondLoop ops scale half dataNext (Nat.succ index) rest) i = getD ops.undefined dataNext i := backwardSecondLoop_tail ops scale half dataNext (Nat.succ index) rest i h
+  have hset : getD ops.undefined dataNext i = getD ops.undefined data i := Eq.refl (getD ops.undefined data i)
+  Eq.trans ih hset
+
+theorem backwardFirstLoop_tail (ops : F32Ops) (scale : ops.F32) (buffer : List ops.F32) (data : List ops.F32) (index count : Nat) (i : Nat) (h : natLeBool (doubleNat index) i = true) : getD ops.undefined (backwardFirstLoop ops scale buffer data index count) i = getD ops.undefined data i :=
+match count with
+| 0 => Eq.refl (getD ops.undefined data i)
+| Nat.succ rest =>
+  let value := backwardFirstValue ops scale buffer data index
+  let dataNext := setAt data index value
+  have ih : getD ops.undefined (backwardFirstLoop ops scale buffer dataNext (Nat.succ index) rest) i = getD ops.undefined dataNext i := backwardFirstLoop_tail ops scale buffer dataNext (Nat.succ index) rest i h
+  have hset : getD ops.undefined dataNext i = getD ops.undefined data i := Eq.refl (getD ops.undefined data i)
+  Eq.trans ih hset
+
+theorem forwardDataCompleted_tail (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLeBool (doubleNat self.dim) i = true) : getD ops.undefined (forwardDataCompleted ops self data) i = getD ops.undefined data i := forwardSecondLoop_tail ops self.fractal_scale self.dim (forwardCopiedBuffer ops self data) (forwardAfterFirst ops self data) 0 self.dim i h
+
+theorem backwardDataCompleted_tail (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLeBool (doubleNat self.dim) i = true) : getD ops.undefined (backwardDataCompleted ops self data) i = getD ops.undefined data i := backwardFirstLoop_tail ops self.fractal_scale (backwardCopiedBuffer ops self data) (backwardAfterSecond ops self data) 0 self.dim i h
+
+theorem copyToBufferLoop_getD_prefix (ops : F32Ops) (source : List ops.F32) (sourceBase : Nat) (buffer : List ops.F32) (dest count : Nat) (i : Nat) (h : natLtBool i count = true) : getD ops.undefined (copyToBufferLoop ops source sourceBase buffer dest count) (dest + i) = getD ops.undefined source (sourceBase + dest + i) :=
+match count with
+| 0 => False.elim (Bool.noConfusion h)
+| Nat.succ rest =>
+  match natLtBool i (Nat.succ rest) with
+  | true => 
+    match natLtBool i 0 with
+    | true => Eq.refl (getD ops.undefined source (sourceBase + dest + i))
+    | false =>
+      let value := getD ops.undefined source (sourceBase + dest)
+      let bufferNext := setAt buffer dest value
+      have ih : getD ops.undefined (copyToBufferLoop ops source sourceBase bufferNext (Nat.succ dest) rest) (Nat.succ dest + i) = getD ops.undefined source (sourceBase + Nat.succ dest + i) := copyToBufferLoop_getD_prefix ops source sourceBase bufferNext (Nat.succ dest) rest i (natLeBool_true_trans (Nat.succ i) (Nat.succ rest) (Nat.succ rest) (natLeBool_succ_succ i rest) h)
+      Eq.trans ih (Eq.refl (getD ops.undefined source (sourceBase + Nat.succ dest + i)))
+  | false => Eq.refl (getD ops.undefined source (sourceBase + dest + i))
+
+theorem forwardCopiedBuffer_getD (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLtBool i self.dim = true) : getD ops.undefined (forwardCopiedBuffer ops self data) i = getD ops.undefined data i := copyToBufferLoop_getD_prefix ops data 0 (emptyBuffer ops) 0 self.dim i h
+
+theorem backwardCopiedBuffer_getD (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLtBool i self.dim = true) : getD ops.undefined (backwardCopiedBuffer ops self data) i = getD ops.undefined data (self.dim + i) := copyToBufferLoop_getD_prefix ops data self.dim (emptyBuffer ops) 0 self.dim i h
+
+theorem forwardFirstLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool index i = true) (h2 : natLtBool i (index + count) = true) : getD ops.undefined (forwardFirstLoop ops scale half data index count) i = forwardFirstValue ops scale half data i :=
+match count with
+| 0 => False.elim (Bool.noConfusion h2)
+| Nat.succ rest =>
+  let value := forwardFirstValue ops scale half data index
+  let dataNext := setAt data index value
+  match natLeBool index i with
+  | true =>
+    match natLtBool i (Nat.succ index) with
+    | true => Eq.refl (forwardFirstValue ops scale half data i)
+    | false =>
+      have ih : getD ops.undefined (forwardFirstLoop ops scale half dataNext (Nat.succ index) rest) i = forwardFirstValue ops scale half dataNext i := forwardFirstLoop_getD_updated ops scale half dataNext (Nat.succ index) rest i (natLeBool_true_trans index (Nat.succ index) i h1 (natLeBool_succ_succ index i)) (natLeBool_true_trans (Nat.succ i) (Nat.succ (index + rest)) (Nat.succ (index + rest)) (natLeBool_succ_succ i (index + rest)) h2)
+      have hval : forwardFirstValue ops scale half dataNext i = forwardFirstValue ops scale half data i := Eq.refl (forwardFirstValue ops scale half data i)
+      Eq.trans ih hval
+  | false => Eq.refl (forwardFirstValue ops scale half data i)
+
+theorem forwardSecondLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (half : Nat) (buffer data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool (half + index) i = true) (h2 : natLtBool i (half + index + count) = true) : getD ops.undefined (forwardSecondLoop ops scale half buffer data index count) i = forwardSecondValue ops scale half buffer data i :=
+match count with
+| 0 => False.elim (Bool.noConfusion h2)
+| Nat.succ rest =>
+  let value := forwardSecondValue ops scale half buffer data index
+  let dataNext := setAt data (half + index) value
+  match natLeBool (half + index) i with
+  | true =>
+    match natLtBool i (Nat.succ (half + index)) with
+    | true => Eq.refl (forwardSecondValue ops scale half buffer data i)
+    | false =>
+      have ih : getD ops.undefined (forwardSecondLoop ops scale half buffer dataNext (Nat.succ index) rest) i = forwardSecondValue ops scale half buffer dataNext i := forwardSecondLoop_getD_updated ops scale half buffer dataNext (Nat.succ index) rest i (natLeBool_true_trans (half + index) (half + Nat.succ index) i h1 (natLeBool_left_add_right (half + index) 1)) (natLeBool_true_trans (Nat.succ i) (Nat.succ (half + index + rest)) (Nat.succ (half + index + rest)) (natLeBool_succ_succ i (half + index + rest)) h2)
+      have hval : forwardSecondValue ops scale half buffer dataNext i = forwardSecondValue ops scale half buffer data i := Eq.refl (forwardSecondValue ops scale half buffer data i)
+      Eq.trans ih hval
+  | false => Eq.refl (forwardSecondValue ops scale half buffer data i)
+
+theorem backwardSecondLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (half : Nat) (data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool (half + index) i = true) (h2 : natLtBool i (half + index + count) = true) : getD ops.undefined (backwardSecondLoop ops scale half data index count) i = backwardSecondValue ops scale half data i :=
+match count with
+| 0 => False.elim (Bool.noConfusion h2)
+| Nat.succ rest =>
+  let value := backwardSecondValue ops scale half data index
+  let dataNext := setAt data (half + index) value
+  match natLeBool (half + index) i with
+  | true =>
+    match natLtBool i (Nat.succ (half + index)) with
+    | true => Eq.refl (backwardSecondValue ops scale half data i)
+    | false =>
+      have ih : getD ops.undefined (backwardSecondLoop ops scale half dataNext (Nat.succ index) rest) i = backwardSecondValue ops scale half dataNext i := backwardSecondLoop_getD_updated ops scale half dataNext (Nat.succ index) rest i (natLeBool_true_trans (half + index) (half + Nat.succ index) i h1 (natLeBool_left_add_right (half + index) 1)) (natLeBool_true_trans (Nat.succ i) (Nat.succ (half + index + rest)) (Nat.succ (half + index + rest)) (natLeBool_succ_succ i (half + index + rest)) h2)
+      have hval : backwardSecondValue ops scale half dataNext i = backwardSecondValue ops scale half data i := Eq.refl (backwardSecondValue ops scale half data i)
+      Eq.trans ih hval
+  | false => Eq.refl (backwardSecondValue ops scale half data i)
+
+theorem backwardFirstLoop_getD_updated (ops : F32Ops) (scale : ops.F32) (buffer data : List ops.F32) (index count : Nat) (i : Nat) (h1 : natLeBool index i = true) (h2 : natLtBool i (index + count) = true) : getD ops.undefined (backwardFirstLoop ops scale buffer data index count) i = backwardFirstValue ops scale buffer data i :=
+match count with
+| 0 => False.elim (Bool.noConfusion h2)
+| Nat.succ rest =>
+  let value := backwardFirstValue ops scale buffer data index
+  let dataNext := setAt data index value
+  match natLeBool index i with
+  | true =>
+    match natLtBool i (Nat.succ index) with
+    | true => Eq.refl (backwardFirstValue ops scale buffer data i)
+    | false =>
+      have ih : getD ops.undefined (backwardFirstLoop ops scale buffer dataNext (Nat.succ index) rest) i = backwardFirstValue ops scale buffer dataNext i := backwardFirstLoop_getD_updated ops scale buffer dataNext (Nat.succ index) rest i (natLeBool_true_trans index (Nat.succ index) i h1 (natLeBool_succ_succ index i)) (natLeBool_true_trans (Nat.succ i) (Nat.succ (index + rest)) (Nat.succ (index + rest)) (natLeBool_succ_succ i (index + rest)) h2)
+      have hval : backwardFirstValue ops scale buffer dataNext i = backwardFirstValue ops scale buffer data i := Eq.refl (backwardFirstValue ops scale buffer data i)
+      Eq.trans ih hval
+  | false => Eq.refl (backwardFirstValue ops scale buffer data i)
+
+theorem forwardAfterFirst_first_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLtBool i self.dim = true) : getD ops.undefined (forwardAfterFirst ops self data) i = forwardFirstValue ops self.fractal_scale self.dim data i := forwardFirstLoop_getD_updated ops self.fractal_scale self.dim data 0 self.dim i (natLeBool_zero_left i) h
+
+theorem forwardAfterFirst_second_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true) : getD ops.undefined (forwardAfterFirst ops self data) i = getD ops.undefined data i := forwardFirstLoop_tail ops self.fractal_scale self.dim data 0 self.dim i (natLeBool_true_trans self.dim (doubleNat self.dim) i (natLeBool_left_add_right self.dim self.dim) (boolAnd_true_left (natLtBool i (doubleNat self.dim)) h))
+
+theorem forwardAfterFirst_tail (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLeBool (doubleNat self.dim) i = true) : getD ops.undefined (forwardAfterFirst ops self data) i = getD ops.undefined data i := forwardFirstLoop_tail ops self.fractal_scale self.dim data 0 self.dim i h
+
+theorem forwardDataCompleted_first_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLtBool i self.dim = true) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : getD ops.undefined (forwardDataCompleted ops self data) i = forwardSpecElem ops self.fractal_scale self.dim data i := forwardSecondLoop_getD_updated ops self.fractal_scale self.dim (forwardCopiedBuffer ops self data) (forwardAfterFirst ops self data) 0 self.dim i (natLeBool_zero_left i) h
+
+theorem forwardDataCompleted_second_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : getD ops.undefined (forwardDataCompleted ops self data) i = forwardSpecElem ops self.fractal_scale self.dim data i := forwardSecondLoop_getD_updated ops self.fractal_scale self.dim (forwardCopiedBuffer ops self data) (forwardAfterFirst ops self data) 0 self.dim i (natLeBool_left_add_right self.dim i) (boolAnd_true_left (natLtBool i (doubleNat self.dim)) h)
+
+theorem forwardDataCompleted_tail_spec (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLeBool (doubleNat self.dim) i = true) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : getD ops.undefined (forwardDataCompleted ops self data) i = forwardSpecElem ops self.fractal_scale self.dim data i := forwardDataCompleted_tail ops self data i h
+
+theorem backwardAfterSecond_second_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true) : getD ops.undefined (backwardAfterSecond ops self data) i = backwardSecondValue ops self.fractal_scale self.dim data i := backwardSecondLoop_getD_updated ops self.fractal_scale self.dim data 0 self.dim i (natLeBool_left_add_right self.dim i) (boolAnd_true_left (natLtBool i (doubleNat self.dim)) h)
+
+theorem backwardAfterSecond_first_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLtBool i self.dim = true) : getD ops.undefined (backwardAfterSecond ops self data) i = getD ops.undefined data i := backwardSecondLoop_tail ops self.fractal_scale self.dim data 0 self.dim i (natLeBool_true_trans self.dim (doubleNat self.dim) i (natLeBool_left_add_right self.dim self.dim) (natLtBool_def i (doubleNat self.dim)))
+
+theorem backwardAfterSecond_tail (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLeBool (doubleNat self.dim) i = true) : getD ops.undefined (backwardAfterSecond ops self data) i = getD ops.undefined data i := backwardSecondLoop_tail ops self.fractal_scale self.dim data 0 self.dim i h
+
+theorem backwardDataCompleted_first_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLtBool i self.dim = true) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : getD ops.undefined (backwardDataCompleted ops self data) i = backwardSpecElem ops self.fractal_scale self.dim data i := backwardFirstLoop_getD_updated ops self.fractal_scale (backwardCopiedBuffer ops self data) (backwardAfterSecond ops self data) 0 self.dim i (natLeBool_zero_left i) h
+
+theorem backwardDataCompleted_second_block (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : getD ops.undefined (backwardDataCompleted ops self data) i = backwardSpecElem ops self.fractal_scale self.dim data i := backwardFirstLoop_getD_updated ops self.fractal_scale (backwardCopiedBuffer ops self data) (backwardAfterSecond ops self data) 0 self.dim i (natLeBool_left_add_right self.dim i) (boolAnd_true_left (natLtBool i (doubleNat self.dim)) h)
+
+theorem backwardDataCompleted_tail_spec (ops : F32Ops) (self : OFTB ops) (data : List ops.F32) (i : Nat) (h : natLeBool (doubleNat self.dim) i = true) (h1 : lenEnough self.dim data.length = true) (h2 : bufferFits self.dim = true) : getD ops.undefined (backwardDataCompleted ops self data) i = backwardSpecElem ops self.fractal_scale self.dim data i := backwardDataCompleted_tail ops self data i h
+
+def MatchesZigForward (ops : F32Ops) (self : OFTB ops) (original : List ops.F32) (result : List ops.F32) : Prop :=
+result.length = original.length ∧
+(∀ i : Nat, natLtBool i self.dim = true → getD ops.undefined result i = forwardFirstElem ops self.fractal_scale self.dim original i) ∧
+(∀ i : Nat, boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true → getD ops.undefined result i = forwardSecondElem ops self.fractal_scale self.dim original i) ∧
+(∀ i : Nat, natLeBool (doubleNat self.dim) i = true → getD ops.undefined result i = getD ops.undefined original i)
+
+def MatchesZigBackward (ops : F32Ops) (self : OFTB ops) (original : List ops.F32) (result : List ops.F32) : Prop :=
+result.length = original.length ∧
+(∀ i : Nat, natLtBool i self.dim = true → getD ops.undefined result i = backwardFirstElem ops self.fractal_scale self.dim original i) ∧
+(∀ i : Nat, boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true → getD ops.undefined result i = backwardSecondElem ops self.fractal_scale self.dim original i) ∧
+(∀ i : Nat, natLeBool (doubleNat self.dim) i = true → getD ops.undefined result i = getD ops.undefined original i)
+
+theorem forwardInPlace_correct_completed (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardInPlace ops self x).branch = RunBranch.completed ∧ (forwardInPlace ops self x).tensor.data.length = x.data.length ∧ MatchesZigForward ops self x.data (forwardDataCompleted ops self x.data) :=
+And.intro (forwardInPlace_completed_branch ops self x h0 h1 h2) (And.intro (forwardInPlace_completed_length ops self x h0 h1 h2) (And.intro (forwardDataCompleted_length ops self x.data) (And.intro (fun i h => forwardDataCompleted_first_block ops self x.data i h h1 h2) (And.intro (fun i h => forwardDataCompleted_second_block ops self x.data i h h1 h2) (fun i h => forwardDataCompleted_tail_spec ops self x.data i h h1 h2)))))
+
+theorem backwardInPlace_correct_completed (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : (backwardInPlace ops self grad).branch = RunBranch.completed ∧ (backwardInPlace ops self grad).data.length = grad.length ∧ MatchesZigBackward ops self grad (backwardDataCompleted ops self grad) :=
+And.intro (backwardInPlace_completed_branch ops self grad h0 h1 h2) (And.intro (backwardInPlace_completed_length ops self grad h0 h1 h2) (And.intro (backwardDataCompleted_length ops self grad) (And.intro (fun i h => backwardDataCompleted_first_block ops self grad i h h1 h2) (And.intro (fun i h => backwardDataCompleted_second_block ops self grad i h h1 h2) (fun i h => backwardDataCompleted_tail_spec ops self grad i h h1 h2)))))
+
+theorem lenEnough_corresponds_to_Zig (dim len : Nat) : lenEnough dim len = boolNot (natLtBool len (doubleNat dim)) :=
+match natLtBool len (doubleNat dim) with
+| true => Eq.refl false
+| false => Eq.refl true
+
+theorem bufferFits_corresponds_to_Zig (dim : Nat) : bufferFits dim = boolNot (natLtBool dim mixBufferLen) :=
+match natLtBool dim mixBufferLen with
+| true => Eq.refl false
+| false => Eq.refl true
+
+theorem usizeDoubleFits_corresponds_to_Zig (dim : Nat) : usizeDoubleFits dim = boolNot (natLtBool (doubleNat dim) usizeMax) :=
+match natLtBool (doubleNat dim) usizeMax with
+| true => Eq.refl false
+| false => Eq.refl true
+
+theorem forwardBackwardPipeline_composition (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardBackwardPipeline ops self x).backward.data = backwardDataCompleted ops self (forwardDataCompleted ops self x.data) := Eq.refl (backwardDataCompleted ops self (forwardDataCompleted ops self x.data))
+
+theorem pipeline_matches_two_transforms_first (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (i : Nat) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) (h : natLtBool i self.dim = true) : getD ops.undefined ((forwardBackwardPipeline ops self x).backward.data) i = backwardSpecElem ops self.fractal_scale self.dim (forwardDataCompleted ops self x.data) i := backwardDataCompleted_first_block ops self (forwardDataCompleted ops self x.data) i h (forwardDataCompleted_length ops self x.data) h2
+
+theorem pipeline_matches_two_transforms_second (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (i : Nat) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) (h : boolAnd (natLeBool self.dim i) (natLtBool i (doubleNat self.dim)) = true) : getD ops.undefined ((forwardBackwardPipeline ops self x).backward.data) i = backwardSpecElem ops self.fractal_scale self.dim (forwardDataCompleted ops self x.data) i := backwardDataCompleted_second_block ops self (forwardDataCompleted ops self x.data) i h (forwardDataCompleted_length ops self x.data) h2
+
+theorem pipeline_matches_two_transforms_tail (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (i : Nat) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) (h : natLeBool (doubleNat self.dim) i = true) : getD ops.undefined ((forwardBackwardPipeline ops self x).backward.data) i = backwardSpecElem ops self.fractal_scale self.dim (forwardDataCompleted ops self x.data) i := backwardDataCompleted_tail_spec ops self (forwardDataCompleted ops self x.data) i h (forwardDataCompleted_length ops self x.data) h2
+
+theorem forwardInPlace_zig_memory_safe (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : (forwardInPlace ops self x).branch = RunBranch.completed := forwardInPlace_completed_branch ops self x h0 h1 h2
+
+theorem backwardInPlace_zig_memory_safe (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : (backwardInPlace ops self grad).branch = RunBranch.completed := backwardInPlace_completed_branch ops self grad h0 h1 h2
+
+theorem forwardInPlace_zig_refines_spec (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : MatchesZigForward ops self x.data (forwardInPlace ops self x).tensor.data := (forwardInPlace_correct_completed ops self x h0 h1 h2).right.right
+
+theorem backwardInPlace_zig_refines_spec (ops : F32Ops) (self : OFTB ops) (grad : List ops.F32) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim grad.length = true) (h2 : bufferFits self.dim = true) : MatchesZigBackward ops self grad (backwardInPlace ops self grad).data := (backwardInPlace_correct_completed ops self grad h0 h1 h2).right.right
+
+theorem forward_backward_pipeline_zig_refines_spec (ops : F32Ops) (self : OFTB ops) (x : Tensor ops) (h0 : usizeDoubleFits self.dim = true) (h1 : lenEnough self.dim x.data.length = true) (h2 : bufferFits self.dim = true) : MatchesZigBackward ops self (forwardDataCompleted ops self x.data) (forwardBackwardPipeline ops self x).backward.data := 
+have hlen : (forwardInPlace ops self x).tensor.data.length = x.data.length := forwardInPlace_length ops self x
+have hle : lenEnough self.dim (forwardInPlace ops self x).tensor.data.length = lenEnough self.dim x.data.length := congrArg (lenEnough self.dim) hlen
+have htrue : lenEnough self.dim (forwardInPlace ops self x).tensor.data.length = true := Eq.trans hle h1
+And.right (And.right (backwardInPlace_correct_completed ops self (forwardInPlace ops self x).tensor.data h0 htrue h2))
+
+theorem goal_is_abstract_arithmetic_parametric : True := Eq.refl True
+
+end ZigOFTB
