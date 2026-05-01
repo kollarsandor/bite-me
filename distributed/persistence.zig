@@ -13,14 +13,15 @@ pub const PersistenceError = error{
 } || rsf.transaction.TransactionError || rsf.wal.WalError || rsf.repair_mod.RepairError || rsf.recovery.RecoveryError || std.mem.Allocator.Error;
 
 pub const LoadResult = struct {
-    payload: []u8,
+    payload:[]u8,
     used_backup: bool,
     bytes: usize,
     crc32: u32,
 
     pub fn deinit(self: *LoadResult, allocator: std.mem.Allocator) void {
         if (self.payload.len > 0) allocator.free(self.payload);
-        self.payload = &[_]u8{};
+        self.payload.len = 0;
+        self.payload.ptr = undefined;
         self.bytes = 0;
         self.crc32 = 0;
     }
@@ -39,21 +40,21 @@ pub const ClusterAggregateReport = struct {
     ranks_present: u32,
     total_records: usize,
     bytes_written: usize,
-    output_path: []const u8,
+    output_path:[]const u8,
 };
 
 pub const OwnedRecord = struct {
     header: rsf.wal.RecordHeader,
-    payload: []u8,
+    payload:[]u8,
 };
 
 pub const CheckpointStore = struct {
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
     primary_name: []u8,
-    backup_name: []u8,
+    backup_name:[]u8,
     wal_name: []u8,
-    cluster_wal_name: []u8,
+    cluster_wal_name:[]u8,
     wal: ?rsf.wal.WriteAheadLog,
     wal_segment: u64,
     rank: u32,
@@ -62,14 +63,14 @@ pub const CheckpointStore = struct {
 
     const Self = @This();
 
-    pub fn openAt(allocator: std.mem.Allocator, dir: std.fs.Dir, basename: []const u8) PersistenceError!Self {
+    pub fn openAt(allocator: std.mem.Allocator, dir: std.fs.Dir, basename:[]const u8) PersistenceError!Self {
         return openWithRank(allocator, dir, basename, 0, 1);
     }
 
     pub fn openWithRank(
         allocator: std.mem.Allocator,
         dir: std.fs.Dir,
-        basename: []const u8,
+        basename:[]const u8,
         rank: u32,
         world_size: u32,
     ) PersistenceError!Self {
@@ -111,7 +112,7 @@ pub const CheckpointStore = struct {
     }
 
     fn nextSegmentIndex(self: *Self) u64 {
-        const ts: u64 = @intCast(std.time.nanoTimestamp());
+        const ts: u64 = @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
         var seg = self.wal_segment;
         if (seg == 0) seg = ts;
         seg +%= 1;
@@ -128,7 +129,7 @@ pub const CheckpointStore = struct {
         self.wal = w;
     }
 
-    pub fn save(self: *Self, payload: []const u8) PersistenceError!SaveResult {
+    pub fn save(self: *Self, payload:[]const u8) PersistenceError!SaveResult {
         if (!self.open) return PersistenceError.NotOpen;
         if (payload.len == 0) return PersistenceError.EmptyPayload;
         var tx = try rsf.transaction.SaveTransaction.begin(self.allocator, self.dir, self.primary_name);
@@ -142,10 +143,10 @@ pub const CheckpointStore = struct {
         try self.ensureWal();
         if (self.wal) |*w| {
             var marker_buf: [24]u8 = undefined;
-            std.mem.writeIntLittle(u64, marker_buf[0..8], @as(u64, @intCast(written)));
-            std.mem.writeIntLittle(u32, marker_buf[8..12], crc);
-            std.mem.writeIntLittle(u64, marker_buf[12..20], @as(u64, @intCast(std.time.nanoTimestamp())));
-            std.mem.writeIntLittle(u32, marker_buf[20..24], self.rank);
+            std.mem.writeInt(u64, marker_buf[0..8], @as(u64, @intCast(written)), .little);
+            std.mem.writeInt(u32, marker_buf[8..12], crc, .little);
+            std.mem.writeInt(u64, marker_buf[12..20], @truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))), .little);
+            std.mem.writeInt(u32, marker_buf[20..24], self.rank, .little);
             marker_seq = try w.append(.snapshot_marker, &marker_buf);
         }
         return .{
@@ -155,7 +156,7 @@ pub const CheckpointStore = struct {
         };
     }
 
-    fn readWholeFile(self: *Self, name: []const u8) PersistenceError!?LoadResult {
+    fn readWholeFile(self: *Self, name:[]const u8) PersistenceError!?LoadResult {
         const file = self.dir.openFile(name, .{}) catch return null;
         defer file.close();
         const stat = file.stat() catch return null;
@@ -193,7 +194,7 @@ pub const CheckpointStore = struct {
         return PersistenceError.NoSnapshot;
     }
 
-    pub fn recordStep(self: *Self, kind: rsf.wal.RecordKind, payload: []const u8) PersistenceError!u64 {
+    pub fn recordStep(self: *Self, kind: rsf.wal.RecordKind, payload:[]const u8) PersistenceError!u64 {
         try self.ensureWal();
         const w = if (self.wal) |*ww| ww else return PersistenceError.NotOpen;
         return try w.append(kind, payload);
@@ -235,19 +236,19 @@ pub const CheckpointStore = struct {
         return 0;
     }
 
-    pub fn primaryPath(self: *const Self) []const u8 {
+    pub fn primaryPath(self: *const Self)[]const u8 {
         return self.primary_name;
     }
 
-    pub fn backupPath(self: *const Self) []const u8 {
+    pub fn backupPath(self: *const Self)[]const u8 {
         return self.backup_name;
     }
 
-    pub fn walPath(self: *const Self) []const u8 {
+    pub fn walPath(self: *const Self)[]const u8 {
         return self.wal_name;
     }
 
-    pub fn clusterWalPath(self: *const Self) []const u8 {
+    pub fn clusterWalPath(self: *const Self)[]const u8 {
         return self.cluster_wal_name;
     }
 
@@ -366,7 +367,7 @@ test "checkpoint store atomic save and load" {
     defer tmp_dir.cleanup();
     var store = try CheckpointStore.openAt(alloc, tmp_dir.dir, "model.rsf");
     defer store.close();
-    const payload = [_]u8{ 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77 };
+    const payload =[_]u8{ 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77 };
     const save_res = try store.save(&payload);
     try std.testing.expectEqual(@as(usize, payload.len), save_res.bytes_written);
     var loaded = try store.load();
